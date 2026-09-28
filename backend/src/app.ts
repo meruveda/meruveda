@@ -78,6 +78,8 @@ import blogRoutes from './routes/blogRoutes';
 import shiprocketRoutes from './routes/shiprocketRoutes';
 import bannerRoutes from './routes/bannerRoutes';
 import payuRoutes from './routes/payuRoutes';
+import whatsappRoutes from './routes/whatsappRoutes';
+import jobRoutes from './routes/jobRoutes';
 import path from 'path';
 
 // Routes
@@ -101,6 +103,8 @@ app.use('/api/support', supportRoutes);
 app.use('/api/shiprocket', shiprocketRoutes);
 app.use('/api/banners', bannerRoutes);
 app.use('/api/payu', payuRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/jobs', jobRoutes);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

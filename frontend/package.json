@@ -9,6 +9,7 @@
     "lint": "eslint --no-error-on-unmatched-pattern"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "axios": "^1.18.1",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.23.0",

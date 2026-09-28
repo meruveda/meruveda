@@ -2,6 +2,7 @@ import { supabase } from '../database/supabase';
 import { shiprocketOrderService } from './shiprocket/order.service';
 import { shiprocketTrackingService } from './shiprocket/tracking.service';
 import { shiprocketWebhookService } from './shiprocket/webhook.service';
+import { orderNotifyService } from './orderNotifyService';
 import { ShiprocketOrderPayload } from './shiprocket/types';
 import { config } from '../config/env';
 
@@ -472,6 +473,24 @@ export const orderService = {
       .single();
 
     if (error) throw error;
+
+    // 4b. Push a WhatsApp status update to the customer for the shipment /
+    // cancellation milestones. Fire-and-forget: never block the admin action.
+    try {
+      const notifyKey =
+        normalizedStatus === 'shipped' || normalizedStatus === 'out for delivery'
+          ? 'shipped'
+          : normalizedStatus === 'delivered'
+          ? 'delivered'
+          : normalizedStatus === 'cancelled'
+          ? 'cancelled'
+          : null;
+      if (notifyKey && notifyKey !== String(order.status || '').toLowerCase()) {
+        await orderNotifyService.sendStatusUpdate(id, notifyKey);
+      }
+    } catch (notifyErr: any) {
+      console.error('[OrderStatus] WhatsApp update failed:', notifyErr?.message || notifyErr);
+    }
 
     // 5. Save cancellation to history
     if (status === 'cancelled' || normalizedStatus === 'cancelled') {

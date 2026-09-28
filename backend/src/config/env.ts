@@ -56,4 +56,18 @@ export const config = {
   // Shipping taxability flag — TODO: PENDING CLIENT CONFIRMATION.
   // Composite supply rule suggests shipping is taxable, defaulting to false.
   shippingIsTaxable: process.env.SHIPPING_IS_TAXABLE === 'true',
+  // ---- WhatsApp Cloud API (Meta) ----
+  whatsappApiToken: process.env.WHATSAPP_API_TOKEN || '',
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+  whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+  whatsappWebhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
+  // Store admin's WhatsApp number — receives every invoice + order notification.
+  adminWhatsappNumber: process.env.ADMIN_WHATSAPP_NUMBER || '',
+  // Meta Graph API version used for WhatsApp Cloud API calls.
+  whatsappGraphApiVersion: process.env.WHATSAPP_GRAPH_API_VERSION || 'v20.0',
+  // ---- Scheduled jobs (7-day review request) ----
+  // Shared secret Vercel Cron (or any scheduler) must send as `Authorization: Bearer <secret>`.
+  cronSecret: process.env.CRON_SECRET || '',
+  // Base URL of this backend — used by the webhook docs helper.
+  backendUrl: process.env.BACKEND_URL || '',
 };

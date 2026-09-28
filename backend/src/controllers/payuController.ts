@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { payuService } from '../services/payuService';
 import { orderService } from '../services/orderService';
+import { orderNotifyService } from '../services/orderNotifyService';
 import { supabase } from '../database/supabase';
 import { config } from '../config/env';
 
@@ -135,6 +136,15 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
       }).eq('id', order.id);
 
       await upsertTransaction('success', 'captured');
+
+      // Post-purchase WhatsApp automation: order confirmation + PDF invoice to
+      // the customer and to ADMIN_WHATSAPP_NUMBER. Failures are logged inside
+      // the service and must never block the payment redirect.
+      try {
+        await orderNotifyService.sendPostPurchaseMessages(order.id);
+      } catch (notifyErr: any) {
+        console.error('[PayU Callback] Post-purchase WhatsApp messages failed:', notifyErr?.message || notifyErr);
+      }
 
       return res.redirect(`${config.frontendUrl}/checkout/success/${order.id}`);
     } else {

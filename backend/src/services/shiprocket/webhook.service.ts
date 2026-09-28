@@ -1,4 +1,5 @@
 import { supabase } from '../../database/supabase';
+import { orderNotifyService } from '../orderNotifyService';
 
 export const shiprocketWebhookService = {
   /**
@@ -207,6 +208,28 @@ export const shiprocketWebhookService = {
         if (updateError) {
           console.error('[Webhook] Failed to update order status:', updateError);
           throw updateError;
+        }
+
+        // 6b. Push a WhatsApp update to the customer (shipped / out for
+        // delivery / delivered / cancelled). Deduplicated per order+status and
+        // never allowed to break webhook processing.
+        try {
+          const notifyKey =
+            normalizedStatus === 'OUT FOR DELIVERY'
+              ? 'out-for-delivery'
+              : ['PICKED UP', 'IN TRANSIT'].includes(normalizedStatus)
+              ? 'shipped'
+              : normalizedStatus === 'DELIVERED'
+              ? 'delivered'
+              : ['CANCELED', 'CANCELLED'].includes(normalizedStatus)
+              ? 'cancelled'
+              : null;
+
+          if (notifyKey && notifyKey !== String(order.status || '').toLowerCase()) {
+            await orderNotifyService.sendStatusUpdate(order.id, notifyKey);
+          }
+        } catch (notifyErr: any) {
+          console.error('[Webhook] WhatsApp status update failed:', notifyErr?.message || notifyErr);
         }
       } else {
         console.log(`[Webhook] Ignored out-of-order event. Event time: ${eventTimestampStr}, Last sync time: ${order.last_tracking_update}`);
