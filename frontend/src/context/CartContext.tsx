@@ -45,6 +45,33 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const currentFetchVersion = ++fetchCartVersionRef.current;
     if (isAuthenticated) {
       try {
+        // A guest cart must survive OTP verification: push everything that was
+        // collected while browsing into the account cart, then clear it so the
+        // merge can never run twice.
+        const rawGuestCart = localStorage.getItem('meruveda_cart');
+        if (rawGuestCart) {
+          let guestItems: CartItem[] = [];
+          try {
+            guestItems = JSON.parse(rawGuestCart);
+          } catch {
+            guestItems = [];
+          }
+          if (Array.isArray(guestItems) && guestItems.length > 0) {
+            for (const item of guestItems) {
+              try {
+                await axiosInstance.post('/cart', {
+                  product_id: item.id,
+                  quantity: item.quantity || 1,
+                });
+              } catch (mergeErr) {
+                // Item may already exist server-side — never fail the merge.
+                console.error('Failed to merge guest cart item', item.id, mergeErr);
+              }
+            }
+          }
+          localStorage.removeItem('meruveda_cart');
+        }
+
         const response = await axiosInstance.get('/cart');
         if (currentFetchVersion < fetchCartVersionRef.current) {
           return;
@@ -130,11 +157,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: boolean,
     onRedirect: () => void
   ) => {
-    const hasToken = typeof window !== 'undefined' ? !!localStorage.getItem('meruveda_auth_token') : false;
-    if (!isAuthenticated && !hasToken) {
-      onRedirect();
-      return;
-    }
+    // No login required to shop: guests build a localStorage cart which is
+    // merged into their account as soon as the OTP at checkout is verified.
+    // `onRedirect` is kept in the signature for backwards compatibility but is
+    // intentionally not used.
+    void isAuthenticated;
+    void onRedirect;
     await addToCart(item);
   };
 

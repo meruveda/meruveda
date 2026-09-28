@@ -151,12 +151,14 @@ export default function HeroCarousel({ initialBanners }: HeroCarouselProps) {
             {/* Dark vignette */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/15 to-[#220330]/85" />
 
-            {/* Glass content card — only rendered on the active slide */}
-            {isActive && slide.cta_link && (
+            {/* Glass content card — only rendered on the active slide.
+                Always shows a "Shop Now" CTA so the hero drives straight to the
+                shop, even when a banner has no CTA configured. */}
+            {isActive && (
               <div className="absolute inset-0 flex items-end justify-center pb-8 xs:pb-12 sm:pb-16 md:pb-24 px-4 sm:px-10 pointer-events-none">
                 <div className="pointer-events-auto">
                   <Link
-                    href={slide.cta_link}
+                    href={slide.cta_link || "/products"}
                     className="inline-block bg-[#d4af37] hover:bg-[#e5c158] text-[#220330] font-bold px-5 py-2 sm:px-8 sm:py-3.5 rounded-full shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 text-xs sm:text-sm"
                   >
                     {slide.cta_text || "Shop Now"}

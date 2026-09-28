@@ -12,11 +12,16 @@ import {
   Loader2,
   ChevronRight,
   Plus,
-  ShieldCheck
+  ShieldCheck,
+  Smartphone,
+  CheckCircle2,
+  Mail
 } from "lucide-react";
 import axiosInstance from "@/api/axiosInstance";
 
 const SHIPPING_IS_TAXABLE = false; // TODO: PENDING CLIENT CONFIRMATION. Set to true to tax shipping charges.
+
+const OTP_RESEND_SECONDS = 45;
 
 function isRajasthan(state: string): boolean {
   if (!state) return false;
@@ -40,15 +45,11 @@ interface Address {
 
 export default function CheckoutPage() {
   const { cart, cartTotal } = useCart();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isLoading, sendOtp, resendOtp, verifyOtp, saveProfile } = useAuth();
   const router = useRouter();
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.replace("/login?returnUrl=/checkout");
-    }
-  }, [isLoading, isAuthenticated, router]);
+  // No separate login screen: the checkout form itself is the login.
+  // Guests browse and reach checkout freely; identity is collected below.
 
   // States
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -63,6 +64,20 @@ export default function CheckoutPage() {
     phone: "",
     type: "Home",
   });
+
+  // ---- Contact + OTP (step 1, shown on EVERY order) ----
+  const [contactName, setContactName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpMessage, setOtpMessage] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [otpResendIn, setOtpResendIn] = useState(0);
+  const [customerEmail, setCustomerEmail] = useState("");
+
 
   // Payment method state: strictly "payu" (Pay Online via PayU) or "cod" (Cash on Delivery)
   const [paymentMethod, setPaymentMethod] = useState<"payu" | "cod">("payu");
@@ -113,9 +128,8 @@ export default function CheckoutPage() {
     return () => clearTimeout(debounce);
   }, [selectedAddressId, cart, paymentMethod, addresses, cartTotal]);
 
-  // Address lookup
+  // Address lookup (works for guests too — stored in this browser)
   useEffect(() => {
-    if (!user) return;
     const stored = localStorage.getItem("meruveda_addresses");
     let loaded: Address[] = [];
     if (stored) {
@@ -125,7 +139,7 @@ export default function CheckoutPage() {
         console.error(err);
       }
     }
-    if (loaded.length === 0 && user.id === "customer-1") {
+    if (loaded.length === 0 && user?.id === "customer-1") {
       loaded = [
         {
           id: "addr-1",
@@ -148,9 +162,122 @@ export default function CheckoutPage() {
     } else if (loaded.length > 0) {
       setSelectedAddressId(loaded[0].id);
     }
+  }, [user?.id]);
+
+  // Prefill the contact + address form from the signed-in customer, but never
+  // skip the form itself — the user still sees and confirms every field.
+  useEffect(() => {
+    if (!user) return;
+    const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+    if (!contactName && fullName) setContactName(fullName);
+    if (!mobile && user.phone) setMobile(user.phone);
+    if (!customerEmail && user.email && !String(user.email).endsWith("@meruveda.whatsapp")) {
+      setCustomerEmail(user.email);
+    }
+    setAddressForm((prev) => ({
+      ...prev,
+      fullName: prev.fullName || fullName,
+      phone: prev.phone || user.phone || "",
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  if (isLoading || !user) {
+  // OTP resend cooldown ticker
+  useEffect(() => {
+    if (otpResendIn <= 0) return;
+    const t = setTimeout(() => setOtpResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [otpResendIn]);
+
+  const normalizeMobile = (value: string) => value.replace(/[^\d+]/g, "");
+
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setOtpError("");
+    setOtpMessage("");
+
+    const digits = mobile.replace(/\D/g, "");
+    if (digits.length < 10) {
+      setOtpError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    if (!contactName.trim()) {
+      setOtpError("Please enter your name.");
+      return;
+    }
+
+    setIsSendingOtp(true);
+    try {
+      const res = await sendOtp(mobile);
+      setOtpSent(true);
+      setOtpVerified(false);
+      setOtpResendIn(OTP_RESEND_SECONDS);
+      setOtpMessage(
+        res?.devOtp
+          ? `OTP sent. (Development mode — your code is ${res.devOtp})`
+          : "OTP sent to your WhatsApp number."
+      );
+    } catch (err: any) {
+      setOtpError(err?.message || "Could not send the OTP. Please try again.");
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (otpResendIn > 0) return;
+    setOtpError("");
+    setOtpMessage("");
+    setIsSendingOtp(true);
+    try {
+      const res = await resendOtp(mobile);
+      setOtpResendIn(OTP_RESEND_SECONDS);
+      setOtpMessage(
+        res?.devOtp
+          ? `A new OTP was sent. (Development mode — your code is ${res.devOtp})`
+          : "A new OTP has been sent."
+      );
+    } catch (err: any) {
+      setOtpError(err?.message || "Could not resend the OTP. Please try again.");
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setOtpError("");
+    if (otpCode.replace(/\D/g, "").length !== 6) {
+      setOtpError("Please enter the 6-digit OTP.");
+      return;
+    }
+    setIsVerifyingOtp(true);
+    try {
+      // Registers an unknown number, logs an existing one in — every order.
+      await verifyOtp(mobile, otpCode, contactName);
+      setOtpVerified(true);
+      setOtpMessage("Mobile number verified.");
+      setAddressForm((prev) => ({
+        ...prev,
+        fullName: prev.fullName || contactName,
+        phone: prev.phone || mobile,
+      }));
+      // Keep the guest cart: merge it into the account now that we have a session.
+      if (typeof window !== "undefined") {
+        try {
+          window.dispatchEvent(new CustomEvent("meruveda:auth-changed"));
+        } catch {
+          /* noop */
+        }
+      }
+    } catch (err: any) {
+      setOtpError(err?.message || "Invalid OTP. Please try again.");
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-ivory">
         <Loader2 size={40} className="animate-spin text-gold" />
@@ -277,6 +404,14 @@ export default function CheckoutPage() {
 
   // Place Order / Pay Action
   const handlePlaceOrder = async () => {
+    if (!otpVerified) {
+      setOtpError("Please verify your mobile number with the OTP before placing the order.");
+      if (typeof window !== "undefined") {
+        document.getElementById("checkout-contact")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+
     if (!selectedAddressId) {
       alert("Please select a shipping address.");
       return;
@@ -289,6 +424,20 @@ export default function CheckoutPage() {
 
     setIsPlacingOrder(true);
     const selectedAddr = addresses.find((a) => a.id === selectedAddressId)!;
+
+    // Save the latest name / email / address against the account before the
+    // order is created so the invoice and WhatsApp messages use fresh details.
+    try {
+      await saveProfile({
+        name: contactName,
+        email: customerEmail,
+        phone: mobile,
+        address: { ...selectedAddr },
+      });
+    } catch (profileErr) {
+      // Never block checkout because a profile write failed.
+      console.error("Failed to save profile", profileErr);
+    }
 
     const baseCheckoutPayload = {
       items: cart.map(item => ({
@@ -371,12 +520,127 @@ export default function CheckoutPage() {
         {/* Left Side: Steps */}
         <div className="lg:col-span-2 space-y-8">
 
-          {/* STEP 1: SHIPPING ADDRESS */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+          {/* STEP 1: CONTACT & WHATSAPP VERIFICATION (shown on EVERY order) */}
+          <div id="checkout-contact" className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm scroll-mt-28">
             <h2 className="text-xl font-playfair font-bold text-deep-purple mb-6 flex items-center gap-2">
               <span className="w-6 h-6 bg-deep-purple text-white rounded-full text-xs flex items-center justify-center font-sans">1</span>
-              Shipping Address
+              Contact &amp; Verification
             </h2>
+
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    className={inputClass}
+                    placeholder="Priya Sharma"
+                    disabled={otpVerified}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Mobile Number (WhatsApp)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="tel"
+                      required
+                      value={mobile}
+                      onChange={(e) => setMobile(normalizeMobile(e.target.value))}
+                      className={inputClass}
+                      placeholder="98765 43210"
+                      disabled={otpVerified}
+                    />
+                    {!otpVerified && (
+                      <button
+                        type="submit"
+                        disabled={isSendingOtp || (otpResendIn > 0 && otpSent)}
+                        className="shrink-0 bg-deep-purple text-white px-4 text-xs font-bold rounded-lg hover:bg-deep-purple/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                      >
+                        {isSendingOtp ? <Loader2 size={14} className="animate-spin" /> : <Smartphone size={14} />}
+                        {otpSent ? "Resend" : "Send OTP"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {otpSent && !otpVerified && (
+                <div className="border border-gold/30 bg-gold/5 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex-1">
+                      <label className={labelClass}>Enter 6-digit OTP</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                        className={`${inputClass} tracking-[0.4em] font-mono text-center`}
+                        placeholder="------"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleVerifyOtp}
+                      disabled={isVerifyingOtp || otpCode.length !== 6}
+                      className="bg-gold text-deep-purple px-6 py-2 text-xs font-bold rounded-lg hover:bg-gold-light disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isVerifyingOtp ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                      Verify
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-gray-500">
+                      {otpMessage || "We sent a code to your WhatsApp."}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={otpResendIn > 0 || isSendingOtp}
+                      className="text-gold font-bold disabled:text-gray-400 disabled:cursor-not-allowed"
+                    >
+                      {otpResendIn > 0 ? `Resend in ${otpResendIn}s` : "Resend OTP"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {otpError && <p className="text-[11px] text-red-500 font-medium">{otpError}</p>}
+
+              {otpVerified && (
+                <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">
+                  <CheckCircle2 size={15} /> {mobile} verified — welcome{contactName ? `, ${contactName.split(" ")[0]}` : ""}!
+                </div>
+              )}
+            </form>
+          </div>
+
+          {/* STEP 2: ADDRESS + EMAIL (revealed only after OTP verification) */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <h2 className="text-xl font-playfair font-bold text-deep-purple mb-6 flex items-center gap-2">
+              <span className="w-6 h-6 bg-deep-purple text-white rounded-full text-xs flex items-center justify-center font-sans">2</span>
+              Delivery Address &amp; Email
+            </h2>
+
+            {otpVerified ? (
+              <>
+                <div className="mb-5">
+                  <label className={labelClass}>
+                    <span className="inline-flex items-center gap-1"><Mail size={12} /> Email (for order updates)</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    className={inputClass}
+                    placeholder="you@example.com"
+                  />
+                </div>
 
             {addresses.length > 0 && !showNewAddressForm && (
               <div className="space-y-4 mb-6">
@@ -528,12 +792,20 @@ export default function CheckoutPage() {
                 </div>
               </form>
             )}
+              </>
+            ) : (
+              <div className="border border-dashed border-gray-200 rounded-xl p-8 text-center">
+                <Smartphone size={26} className="mx-auto text-gold mb-3" />
+                <p className="text-sm font-bold text-deep-purple">Verify your mobile number to continue</p>
+                <p className="text-xs text-gray-400 mt-1">Complete step 1 — it only takes a few seconds.</p>
+              </div>
+            )}
           </div>
 
-          {/* STEP 2: PAYMENT METHOD */}
+          {/* STEP 3: PAYMENT METHOD */}
           <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
             <h2 className="text-xl font-playfair font-bold text-deep-purple mb-6 flex items-center gap-2">
-              <span className="w-6 h-6 bg-deep-purple text-white rounded-full text-xs flex items-center justify-center font-sans">2</span>
+              <span className="w-6 h-6 bg-deep-purple text-white rounded-full text-xs flex items-center justify-center font-sans">3</span>
               Payment Method
             </h2>
 
@@ -597,7 +869,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* STEP 3: ORDER NOTES */}
+          {/* STEP 4: ORDER NOTES */}
           <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
             <h3 className="text-sm font-bold text-deep-purple mb-2">Order Notes (Optional)</h3>
             <textarea
@@ -719,7 +991,7 @@ export default function CheckoutPage() {
             {/* Submit Action */}
             <button
               onClick={handlePlaceOrder}
-              disabled={isPlacingOrder || !isServiceable}
+              disabled={isPlacingOrder || !isServiceable || !otpVerified}
               className="w-full bg-gold text-deep-purple font-bold py-3.5 rounded-xl hover:bg-gold-light transition-all flex items-center justify-center gap-2 text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isPlacingOrder ? (
@@ -727,6 +999,8 @@ export default function CheckoutPage() {
                   <Loader2 size={18} className="animate-spin" />
                   Processing...
                 </>
+              ) : !otpVerified ? (
+                "Verify mobile number to continue"
               ) : paymentMethod === "payu" ? (
                 `Proceed to Pay Online (₹${finalTotal.toFixed(2)})`
               ) : (

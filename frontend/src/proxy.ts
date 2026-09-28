@@ -16,25 +16,19 @@ export async function proxy(request: NextRequest) {
     // Fallback: check Authorization header (for future API use)
     request.headers.get('Authorization')?.replace('Bearer ', '');
 
-  // Protect /account routes
+  // Protect /account routes — unauthenticated users go straight to checkout,
+  // where the OTP form doubles as the login (no standalone login screen).
   if (pathname.startsWith('/account')) {
     if (!authToken) {
       const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      url.searchParams.set('returnUrl', pathname);
+      url.pathname = '/checkout';
+      url.searchParams.delete('returnUrl');
       return NextResponse.redirect(url);
     }
   }
 
-  // Protect /checkout routes
-  if (pathname.startsWith('/checkout')) {
-    if (!authToken) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      url.searchParams.set('returnUrl', pathname);
-      return NextResponse.redirect(url);
-    }
-  }
+  // /checkout is intentionally public: guests may browse and check out, and
+  // identity is collected by the OTP form on the page itself.
 
   return NextResponse.next();
 }

@@ -38,6 +38,7 @@ export default function Footer() {
             <h4 className="text-lg font-playfair font-bold text-gold mb-6">Quick Links</h4>
             <ul className="space-y-3 text-gray-400">
               <li><Link href="/products" className="hover:text-gold transition-colors">Shop All Products</Link></li>
+              <li><Link href="/track" className="hover:text-gold transition-colors">Track Your Order</Link></li>
               <li><Link href="/about" className="hover:text-gold transition-colors">About MERUVEDA</Link></li>
               <li><Link href="/blog" className="hover:text-gold transition-colors">Ayurvedic Journal</Link></li>
               <li><Link href="/terms" className="hover:text-gold transition-colors">Terms & Conditions</Link></li>

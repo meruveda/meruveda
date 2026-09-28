@@ -29,6 +29,27 @@ export interface SignupData {
 const TOKEN_KEY = 'meruveda_auth_token';
 const USER_KEY = 'meruveda_user';
 
+function persistSession(token: string, user: AuthUser, rememberMe = true) {
+  const storage = rememberMe ? localStorage : sessionStorage;
+  storage.setItem(TOKEN_KEY, token);
+  storage.setItem(USER_KEY, JSON.stringify(user));
+
+  // Always keep in localStorage for consistency across tabs
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+
+  if (typeof window !== 'undefined') {
+    const maxAge = rememberMe ? 30 * 24 * 60 * 60 : '';
+    document.cookie = `${TOKEN_KEY}=${token}; path=/; SameSite=Lax${maxAge ? `; max-age=${maxAge}` : ''}`;
+  }
+}
+
+function unwrapError(error: any): never {
+  if (error?.response?.data?.error?.message) throw new Error(error.response.data.error.message);
+  if (error?.response?.data?.message) throw new Error(error.response.data.message);
+  throw error;
+}
+
 export const authService = {
   login: async (email: string, password: string, rememberMe = false): Promise<AuthResponse> => {
     try {
@@ -88,16 +109,69 @@ export const authService = {
     try {
       await axiosInstance.post('/auth/forgot-password', { email });
     } catch (error: any) {
-      if (error.response?.data?.error?.message) {
-        throw new Error(error.response.data.error.message);
-      }
-      if (error.response?.data?.message) {
-        throw new Error(error.response.data.message);
-      }
-      throw error;
+      unwrapError(error);
     }
   },
 
+  // ---------------- WhatsApp OTP (used by the checkout form) ----------------
+
+  /** Request an OTP for a mobile number. */
+  sendOtp: async (phone: string): Promise<{ expiresInSeconds: number; devOtp?: string }> => {
+    try {
+      const response = await axiosInstance.post('/auth/otp/send', { phone });
+      return response.data;
+    } catch (error: any) {
+      unwrapError(error);
+    }
+  },
+
+  /** Alias kept so resend failures surface the same way as send failures. */
+  resendOtp: async (phone: string): Promise<{ expiresInSeconds: number; devOtp?: string }> => {
+    try {
+      const response = await axiosInstance.post('/auth/otp/resend', { phone });
+      return response.data;
+    } catch (error: any) {
+      unwrapError(error);
+    }
+  },
+
+  /**
+   * Verify the OTP. On success the backend auto-registers an unknown number or
+   * logs an existing customer in — both return a JWT which is persisted here.
+   */
+  verifyOtp: async (phone: string, code: string, name?: string): Promise<AuthResponse> => {
+    try {
+      const response = await axiosInstance.post('/auth/otp/verify', { phone, code, name });
+      const { token, user } = response.data;
+      persistSession(token, user, true);
+      return { user, token, role: user.role };
+    } catch (error: any) {
+      unwrapError(error);
+    }
+  },
+
+  /** Persist the name / email / address collected in the checkout form. */
+  saveProfile: async (payload: {
+    name?: string;
+    email?: string;
+    address?: any;
+    phone?: string;
+  }): Promise<void> => {
+    try {
+      const response = await axiosInstance.put('/auth/profile', payload);
+      const user = response.data?.user;
+      if (user && typeof window !== 'undefined') {
+        const existing = localStorage.getItem(USER_KEY);
+        const parsed = existing ? JSON.parse(existing) : {};
+        localStorage.setItem(
+          USER_KEY,
+          JSON.stringify({ ...parsed, ...user, firstName: user.firstName ?? parsed.firstName, lastName: user.lastName ?? parsed.lastName })
+        );
+      }
+    } catch (error: any) {
+      unwrapError(error);
+    }
+  },
   resetPassword: async (token: string, newPassword: string): Promise<void> => {
     try {
       await axiosInstance.post('/auth/reset-password', { token, newPassword });

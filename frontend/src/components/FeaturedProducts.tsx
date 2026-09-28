@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
@@ -10,13 +9,12 @@ import { useAuth } from "@/context/AuthContext";
 export default function FeaturedProducts({ products }: { products: any[] }) {
   const { cart, addToCartGuarded, updateQuantity } = useCart();
   const { isAuthenticated } = useAuth();
-  const router = useRouter();
 
   const handleAddToCart = (product: { id: string; name: string; price: number; img: string; gst?: number }) => {
     addToCartGuarded(
       { id: product.id, name: product.name, price: product.price, image: product.img, gst: product.gst },
       isAuthenticated,
-      () => router.push(`/login?returnUrl=/`)
+      () => {} // No login required to shop — the checkout form collects identity.
     );
   };
 

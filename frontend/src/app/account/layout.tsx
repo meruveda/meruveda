@@ -22,9 +22,10 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push(`/login?returnUrl=${encodeURIComponent(pathname)}`);
+      // No standalone login screen — the checkout OTP form is the login.
+      router.push('/checkout');
     }
-  }, [isLoading, isAuthenticated, router, pathname]);
+  }, [isLoading, isAuthenticated, router]);
 
   if (isLoading || !user) {
     return (

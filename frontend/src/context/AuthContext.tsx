@@ -18,6 +18,13 @@ interface AuthContextType {
   signup: (data: SignupData) => Promise<void>;
   logout: () => void;
   forgotPassword: (email: string) => Promise<void>;
+  /** Request a WhatsApp OTP for the checkout form. */
+  sendOtp: (phone: string) => Promise<{ expiresInSeconds: number; devOtp?: string }>;
+  resendOtp: (phone: string) => Promise<{ expiresInSeconds: number; devOtp?: string }>;
+  /** Verify the OTP — registers or logs the customer in and restores the session. */
+  verifyOtp: (phone: string, code: string, name?: string) => Promise<void>;
+  /** Persist name / email / address collected during checkout. */
+  saveProfile: (payload: { name?: string; email?: string; address?: any; phone?: string }) => Promise<void>;
 }
 
 // ------------------------------------------------------------------
@@ -64,6 +71,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await authService.forgotPassword(email);
   }, []);
 
+  const sendOtp = useCallback(async (phone: string) => authService.sendOtp(phone), []);
+
+  const resendOtp = useCallback(async (phone: string) => authService.resendOtp(phone), []);
+
+  const verifyOtp = useCallback(async (phone: string, code: string, name?: string) => {
+    const { user: verifiedUser } = await authService.verifyOtp(phone, code, name);
+    setUser(verifiedUser);
+  }, []);
+
+  const saveProfile = useCallback(async (payload: { name?: string; email?: string; address?: any; phone?: string }) => {
+    await authService.saveProfile(payload);
+    // Refresh the in-memory user so later steps see the saved details.
+    const refreshed = authService.getCurrentUser();
+    if (refreshed) setUser(refreshed);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -76,6 +99,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signup,
         logout,
         forgotPassword,
+        sendOtp,
+        resendOtp,
+        verifyOtp,
+        saveProfile,
       }}
     >
       {children}

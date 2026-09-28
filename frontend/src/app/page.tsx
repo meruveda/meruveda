@@ -143,8 +143,15 @@ export default async function Home() {
 
         <FeaturedProducts products={products} />
 
-        <div className="text-center mt-12">
-          <Link href="/products" className="inline-flex items-center gap-2 bg-deep-purple text-white px-8 py-3 rounded-full font-medium hover:bg-deep-purple/90 transition-colors">
+        <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <Link
+            href="/products"
+            className="inline-flex items-center gap-2 bg-gold text-deep-purple px-10 py-3.5 rounded-full font-bold hover:bg-gold-light transition-all shadow-md hover:shadow-lg w-full sm:w-auto justify-center"
+          >
+            Shop Now
+            <ArrowRight size={18} />
+          </Link>
+          <Link href="/products" className="inline-flex items-center gap-2 bg-deep-purple text-white px-8 py-3 rounded-full font-medium hover:bg-deep-purple/90 transition-colors w-full sm:w-auto justify-center">
             View Full Catalog
             <ArrowRight size={18} />
           </Link>

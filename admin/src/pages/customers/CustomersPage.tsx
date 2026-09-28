@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, Search, ShieldAlert, Trash2, Eye, RefreshCw } from 'lucide-react'
+import { Users, Search, ShieldAlert, Trash2, Eye, RefreshCw, Download } from 'lucide-react'
 import { customerService } from '../../services/customerService'
 import { Customer } from '../../types'
 import { formatCurrency, formatDate } from '@meruveda/shared'
@@ -61,6 +61,55 @@ export const CustomersPage: React.FC = () => {
     }
   }
 
+  const csvCell = (value: unknown) => {
+    const raw = value === null || value === undefined ? '' : String(value)
+    return `"${raw.replace(/"/g, '""')}"`
+  }
+
+  const handleExport = () => {
+    if (customers.length === 0) {
+      toast.error('There are no customers to export')
+      return
+    }
+
+    const header = [
+      'Name',
+      'Email',
+      'Phone',
+      'Orders Count',
+      'Lifetime Spend (INR)',
+      'Last Activity',
+      'Status',
+    ]
+
+    const rows = customers.map((c) =>
+      [
+        c.name,
+        c.email,
+        c.phone || '',
+        c.totalOrders,
+        c.lifetimeSpend,
+        c.lastLogin ? formatDate(c.lastLogin) : '',
+        c.isBlocked ? 'Blocked' : 'Active',
+      ]
+        .map(csvCell)
+        .join(',')
+    )
+
+    // BOM keeps Excel (Windows) reading UTF-8 correctly.
+    const csv = [header.map(csvCell).join(','), ...rows].join('\r\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `meruveda-customers-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success(`Exported ${customers.length} customers`)
+  }
+
   return (
     <div className="space-y-6">
       {/* Title */}
@@ -70,7 +119,7 @@ export const CustomersPage: React.FC = () => {
       </div>
 
       {/* Toolbar filter */}
-      <div className="card p-4 flex gap-4 items-center justify-between">
+      <div className="card p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="relative w-full md:w-85 text-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
@@ -81,6 +130,15 @@ export const CustomersPage: React.FC = () => {
             className="input pl-9"
           />
         </div>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={isLoading}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" />
+          Export CSV / Excel
+        </button>
       </div>
 
       {/* Customers Table */}

@@ -13,11 +13,8 @@ export default function CartPage() {
   const router = useRouter();
 
   const handleCheckout = () => {
-    if (!isAuthenticated) {
-      router.push("/login?returnUrl=/checkout");
-    } else {
-      router.push("/checkout");
-    }
+    // No separate login: the checkout form itself collects name, mobile and OTP.
+    router.push("/checkout");
   };
 
   return (

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Minus, Plus, ShoppingCart, Sparkles, Droplets, Star, Loader2 } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Sparkles, Droplets, Star, Loader2, ArrowRight } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -370,6 +370,20 @@ export default function ProductDetailClient({ product }: { product: any }) {
                         A potent botanical blend crafted to restore balance and vitality. Harnessing the restorative properties of organically sourced herbs, this formulation is designed to support natural healing, improve daily wellness, and harmonize your body's intrinsic rhythms according to authentic Ayurvedic principles.
                       </p>
                     )}
+
+                    {/* Shop Now — jumps to the buy section for this product */}
+                    <div className="pt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          document.getElementById("buy")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }}
+                        className="inline-flex items-center gap-2 bg-gold-antique hover:bg-[#A37E33] text-white px-7 py-3 rounded-lg font-semibold text-sm tracking-wide transition-colors shadow-sm hover:shadow-[0_4px_14px_rgba(176,138,62,0.3)]"
+                      >
+                        Shop Now
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
                   </motion.div>
                 )}
                 {activeTab === 'details' && (
@@ -398,10 +412,11 @@ export default function ProductDetailClient({ product }: { product: any }) {
 
             {/* Add to Cart Section */}
             <motion.div 
+              id="buy"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="mt-6 bg-stone-100/50 border border-stone-200/60 p-6 rounded-2xl"
+              className="mt-6 bg-stone-100/50 border border-stone-200/60 p-6 rounded-2xl scroll-mt-28"
             >
               <div className="flex flex-col sm:flex-row gap-4">
                 {cartItem ? (

@@ -40,9 +40,9 @@ function ResetPasswordForm() {
     setLoading(true);
     try {
       await authService.resetPassword(token, password);
-      setSuccess("Your password has been reset successfully! Redirecting to login...");
+      setSuccess("Your password has been reset successfully! Redirecting...");
       setTimeout(() => {
-        router.push("/login");
+        router.push("/");
       }, 3000);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || err.message || "Failed to reset password.");
