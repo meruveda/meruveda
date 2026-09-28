@@ -1,0 +1,108 @@
+import { Request, Response, NextFunction } from 'express';
+import { supabase } from '../database/supabase';
+
+export const getReviews = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { productId, status } = req.query;
+
+    let query = supabase.from('reviews').select('*, users(first_name, last_name)', { count: 'exact' });
+
+    if (productId) query = query.eq('product_id', productId);
+    if (status) query = query.eq('status', status);
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+    res.json({ data, total: count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createReview = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id;
+    const reviewData = { ...req.body, user_id: userId, status: 'approved' };
+
+    const { data, error } = await supabase.from('reviews').insert(reviewData).select().single();
+    if (error) throw error;
+    res.status(201).json({ data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateReviewStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const { data, error } = await supabase.from('reviews').update({ status }).eq('id', id).select().single();
+    if (error) throw error;
+    res.json({ data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteReview = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabase.from('reviews').delete().eq('id', id);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+};
+export const featureReview = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { featured } = req.body;
+
+    const { data, error } = await supabase
+      .from('reviews')
+      .update({ is_featured: featured })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getFeaturedReviews = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*, users(first_name, last_name)')
+      .eq('status', 'approved')
+      .eq('is_featured', true)
+      .order('created_at', { ascending: false })
+      .limit(6);
+
+    if (error) throw error;
+    res.json({ data: data || [] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateReview = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { rating, comment, reply, status } = req.body;
+    const updateData: any = {};
+    if (rating !== undefined) updateData.rating = Number(rating);
+    if (comment !== undefined) updateData.comment = comment;
+    if (reply !== undefined) updateData.reply = reply;
+    if (status !== undefined) updateData.status = status;
+
+    const { data, error } = await supabase.from('reviews').update(updateData).eq('id', id).select().single();
+    if (error) throw error;
+    res.json({ data });
+  } catch (error) {
+    next(error);
+  }
+};
