@@ -4,10 +4,16 @@ import { reviewJobService } from './services/reviewJobService';
 
 const PORT = config.port || 5000;
 
-app.listen(PORT, () => {
-  console.log(`🚀 Backend server is running on http://localhost:${PORT}`);
-  console.log(`Environment: ${config.nodeEnv}`);
-});
+// On Vercel the framework runtime imports the exported app directly —
+// never call listen() there, only in local/standalone deployments.
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Backend server is running on http://localhost:${PORT}`);
+    console.log(`Environment: ${config.nodeEnv}`);
+  });
+}
+
+export default app;
 
 // ---------------------------------------------------------------------------
 // Local development scheduler.

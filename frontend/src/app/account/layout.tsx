@@ -45,7 +45,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
     { name: "Saved Addresses", href: "/account/addresses", icon: MapPin },
     { name: "Payment Methods", href: "/account/payment-methods", icon: CreditCard },
     user?.role === 'admin'
-      ? { name: "Admin Dashboard", href: process.env.NEXT_PUBLIC_ADMIN_URL || "http://localhost:5174", icon: Settings }
+      ? { name: "Admin Dashboard", href: process.env.NEXT_PUBLIC_ADMIN_URL || "/admin", icon: Settings }
       : { name: "Account Settings", href: "/account/settings", icon: Settings },
   ];
 

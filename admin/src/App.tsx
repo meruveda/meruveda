@@ -54,7 +54,7 @@ export const App: React.FC = () => {
       <ThemeProvider>
         <AuthProvider>
           <SidebarProvider>
-            <BrowserRouter>
+            <BrowserRouter basename="/admin">
               <Routes>
                 {/* Public Auth Routes */}
                 <Route

@@ -14,7 +14,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (user?.role === 'admin') {
-      window.location.href = process.env.NEXT_PUBLIC_ADMIN_URL || "http://localhost:5174";
+      window.location.href = process.env.NEXT_PUBLIC_ADMIN_URL || "/admin";
     }
   }, [user]);
 

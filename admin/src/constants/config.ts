@@ -3,13 +3,13 @@
 // ==========================================
 
 /** Customer website URL — set VITE_CUSTOMER_WEBSITE_URL env var in production */
-export const CUSTOMER_WEBSITE_URL = import.meta.env.VITE_CUSTOMER_WEBSITE_URL || 'http://localhost:3000'
+export const CUSTOMER_WEBSITE_URL = import.meta.env.VITE_CUSTOMER_WEBSITE_URL || '/'
 
 /** Admin app base path */
 export const ADMIN_BASE_PATH = '/admin'
 
 /** API base URL — switch to real backend URL when ready */
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 /** App metadata */
 export const APP_NAME = 'MeruVeda Admin'

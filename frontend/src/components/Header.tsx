@@ -120,7 +120,7 @@ export default function Header() {
                 </Link>
                 {user.role === 'admin' ? (
                   <a
-                    href={process.env.NEXT_PUBLIC_ADMIN_URL || "http://localhost:5174"}
+                    href={process.env.NEXT_PUBLIC_ADMIN_URL || "/admin"}
                     onClick={() => setDropdownOpen(false)}
                     className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
                   >
