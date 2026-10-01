@@ -3,7 +3,7 @@
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import {
   CreditCard,
@@ -11,17 +11,256 @@ import {
   Package,
   Loader2,
   ChevronRight,
+  ChevronDown,
   Plus,
   ShieldCheck,
   Smartphone,
   CheckCircle2,
-  Mail
+  Mail,
+  MapPin,
+  Pencil,
+  Trash2,
+  Star
 } from "lucide-react";
 import axiosInstance from "@/api/axiosInstance";
 
 const SHIPPING_IS_TAXABLE = false; // TODO: PENDING CLIENT CONFIRMATION. Set to true to tax shipping charges.
 
 const OTP_RESEND_SECONDS = 45;
+
+// All Indian states and Union Territories — dropdown for the delivery address.
+const INDIAN_STATES: string[] = [
+  "Andaman and Nicobar Islands",
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chandigarh",
+  "Chhattisgarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jammu and Kashmir",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Ladakh",
+  "Lakshadweep",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Puducherry",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+];
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PIN_RE = /^\d{6}$/;
+
+// Records a completed OTP verification in this browser so a refresh (or an
+// already-signed-in session) is not mistaken for "never verified". This is the
+// same trust level as React state — it only ever holds a code the backend
+// actually accepted — it just survives a reload.
+const OTP_VERIFIED_KEY = "meruveda_otp_verified_phone";
+
+const ADDRESS_TYPES = ["Home", "Work", "Other"] as const;
+
+/** Digits only, with a leading country/area code removed so 91… and 0… match. */
+function normalizePhoneDigits(value: string): string {
+  let d = (value || "").replace(/\D/g, "");
+  if (d.length === 12 && d.startsWith("91")) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+  return d;
+}
+
+type AddressFormState = {
+  house: string;
+  area: string;
+  landmark: string;
+  city: string;
+  state: string;
+  pincode: string;
+  type: string;
+  isDefault: boolean;
+};
+
+const emptyAddressForm = (): AddressFormState => ({
+  house: "",
+  area: "",
+  landmark: "",
+  city: "",
+  state: "",
+  pincode: "",
+  type: "Home",
+  isDefault: false,
+});
+
+/**
+ * Searchable State / Union Territory combobox — native <select> cannot be
+ * searched, and this keeps the checkout dependency-free.
+ */
+function StateSelect({
+  id,
+  value,
+  onChange,
+  className,
+  invalid,
+}: {
+  id: string;
+  value: string;
+  onChange: (state: string) => void;
+  className: string;
+  invalid?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const options = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return INDIAN_STATES;
+    return INDIAN_STATES.filter((s) => s.toLowerCase().includes(q));
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, [open]);
+
+  const choose = (state: string) => {
+    onChange(state);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="relative">
+        <input
+          id={id}
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={`${id}-listbox`}
+          aria-autocomplete="list"
+          aria-label="State / Union Territory"
+          autoComplete="address-level1"
+          value={open ? query : value}
+          placeholder="Search state or UT"
+          onFocus={() => {
+            setQuery("");
+            setActive(0);
+            setOpen(true);
+          }}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+            setActive(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              if (!open) return setOpen(true);
+              setActive((i) => Math.min(i + 1, options.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Enter") {
+              if (open && options[active]) {
+                e.preventDefault();
+                choose(options[active]);
+              }
+            } else if (e.key === "Escape") {
+              setOpen(false);
+              setQuery("");
+            }
+          }}
+          className={`${className} pr-9 ${invalid ? "border-red-400" : ""}`}
+        />
+        <ChevronDown
+          size={15}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+        />
+      </div>
+
+      {open && (
+        <ul
+          id={`${id}-listbox`}
+          role="listbox"
+          className="absolute z-40 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-xl"
+        >
+          {options.length === 0 ? (
+            <li className="px-3 py-2 text-xs text-gray-500">No state matches “{query}”.</li>
+          ) : (
+            options.map((state, i) => (
+              <li
+                key={state}
+                id={`${id}-option-${i}`}
+                role="option"
+                aria-selected={state === value}
+                onMouseEnter={() => setActive(i)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  choose(state);
+                }}
+                className={`cursor-pointer px-3 py-2 text-sm ${
+                  state === value
+                    ? "bg-deep-purple/5 font-semibold text-deep-purple"
+                    : i === active
+                      ? "bg-gold/15 text-deep-purple"
+                      : "text-gray-700"
+                }`}
+              >
+                {state}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+
+// Combines the Amazon-style parts into the single multi-line string the order
+// API, invoice PDF, Shiprocket and admin panel already read.
+function formatAddressLine(form: { house: string; area: string; landmark: string }): string {
+  return [form.house, form.area, form.landmark]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** Splits a stored address back into the House / Lane fields for editing. */
+function splitAddressParts(addr: Address): { house: string; area: string } {
+  if (addr.addressLine1 || addr.addressLine2) {
+    return { house: addr.addressLine1 || "", area: addr.addressLine2 || "" };
+  }
+  const parts = (addr.addressLine || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return { house: parts[0] || "", area: parts.slice(1).join(", ") };
+}
 
 function isRajasthan(state: string): boolean {
   if (!state) return false;
@@ -41,6 +280,36 @@ interface Address {
   phone: string;
   type: string;
   isDefault: boolean;
+  // Additive, optional only — carried through to the JSONB shipping_address.
+  // Nothing here is required, so previously saved addresses keep working.
+  addressLine1?: string;
+  addressLine2?: string;
+  landmark?: string;
+  country?: string;
+  pincode?: string;
+}
+
+const ADDRESSES_KEY = "meruveda_addresses";
+
+function readStoredAddresses(): Address[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(ADDRESSES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((a: any) => a && a.id) : [];
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+}
+
+function writeStoredAddresses(list: Address[]) {
+  try {
+    localStorage.setItem(ADDRESSES_KEY, JSON.stringify(list));
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 export default function CheckoutPage() {
@@ -55,15 +324,12 @@ export default function CheckoutPage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>("");
   const [showNewAddressForm, setShowNewAddressForm] = useState(false);
-  const [addressForm, setAddressForm] = useState({
-    fullName: "",
-    addressLine: "",
-    city: "",
-    state: "",
-    zipCode: "",
-    phone: "",
-    type: "Home",
-  });
+  // Non-null while an existing address is being edited rather than created.
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  // Delivery address fields (name/phone live in step 1, email sits in its own
+  // block — they are merged in when the address is used).
+  const [addressForm, setAddressForm] = useState<AddressFormState>(emptyAddressForm());
+  const [addressSubmitted, setAddressSubmitted] = useState(false);
 
   // ---- Contact + OTP (step 1, shown on EVERY order) ----
   const [contactName, setContactName] = useState("");
@@ -77,6 +343,8 @@ export default function CheckoutPage() {
   const [otpError, setOtpError] = useState("");
   const [otpResendIn, setOtpResendIn] = useState(0);
   const [customerEmail, setCustomerEmail] = useState("");
+
+  const hydratedFromProfileRef = useRef(false);
 
 
   // Payment method state: strictly "payu" (Pay Online via PayU) or "cod" (Cash on Delivery)
@@ -94,19 +362,31 @@ export default function CheckoutPage() {
   const [isCheckingShipping, setIsCheckingShipping] = useState(false);
   const [estimatedDeliveryDays, setEstimatedDeliveryDays] = useState(4);
 
+  // True while the customer is entering the address by hand (nothing entered
+  // yet on an open form still falls back to the selected saved address).
+  // Decides which pincode the serviceability check and order payload use.
+  const formTouched =
+    addressForm.house.trim() !== "" ||
+    addressForm.area.trim() !== "" ||
+    addressForm.city.trim() !== "" ||
+    addressForm.state.trim() !== "" ||
+    addressForm.pincode.trim() !== "";
+  const usesAddressForm = addresses.length === 0 || (showNewAddressForm && formTouched);
+  const deliveryZip = usesAddressForm
+    ? addressForm.pincode.trim()
+    : addresses.find((a) => a.id === selectedAddressId)?.zipCode || "";
+
   // Shiprocket Shipping Check
   useEffect(() => {
     const checkShipping = async () => {
-      if (!selectedAddressId || cart.length === 0) return;
-      const addr = addresses.find(a => a.id === selectedAddressId);
-      if (!addr?.zipCode) return;
+      if (!/^\d{6}$/.test(deliveryZip) || cart.length === 0) return;
 
       setIsCheckingShipping(true);
       try {
         const totalWeight = cart.reduce((acc, item) => acc + (0.5 * (item.quantity || 1)), 0);
 
         const res = await axiosInstance.get(
-          `/shiprocket/serviceability?delivery_postcode=${addr.zipCode}&weight=${totalWeight}&cod=${paymentMethod === 'cod' ? 1 : 0}`
+          `/shiprocket/serviceability?delivery_postcode=${deliveryZip}&weight=${totalWeight}&cod=${paymentMethod === 'cod' ? 1 : 0}`
         );
 
         if (res.data?.success && res.data.data?.data?.available_courier_companies?.length > 0) {
@@ -126,43 +406,36 @@ export default function CheckoutPage() {
 
     const debounce = setTimeout(() => { checkShipping() }, 500);
     return () => clearTimeout(debounce);
-  }, [selectedAddressId, cart, paymentMethod, addresses, cartTotal]);
+  }, [deliveryZip, cart, paymentMethod, cartTotal, usesAddressForm, selectedAddressId, addresses, showNewAddressForm, addressForm.pincode]);
 
-  // Address lookup (works for guests too — stored in this browser)
+  // Address lookup (guests and signed-in customers share this browser store).
   useEffect(() => {
-    const stored = localStorage.getItem("meruveda_addresses");
-    let loaded: Address[] = [];
-    if (stored) {
-      try {
-        loaded = JSON.parse(stored);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    if (loaded.length === 0 && user?.id === "customer-1") {
-      loaded = [
-        {
-          id: "addr-1",
-          fullName: "Priya Sharma",
-          addressLine: "Flat 402, Green Glen Layout, Bellandur",
-          city: "Bengaluru",
-          state: "Karnataka",
-          zipCode: "560103",
-          phone: "+91 98765 43210",
-          type: "Home",
-          isDefault: true,
-        }
-      ];
-      localStorage.setItem("meruveda_addresses", JSON.stringify(loaded));
-    }
+    const loaded = readStoredAddresses();
     setAddresses(loaded);
     const def = loaded.find((a) => a.isDefault);
-    if (def) {
-      setSelectedAddressId(def.id);
-    } else if (loaded.length > 0) {
-      setSelectedAddressId(loaded[0].id);
-    }
-  }, [user?.id]);
+    setSelectedAddressId(def ? def.id : loaded[0]?.id || "");
+  }, []);
+
+  // The address book is also mirrored on the customer profile, so signing in
+  // on a fresh browser still restores what was saved last time.
+  useEffect(() => {
+    if (hydratedFromProfileRef.current || !user) return;
+    hydratedFromProfileRef.current = true;
+    if (readStoredAddresses().length > 0) return;
+
+    const remote = user.address;
+    const book: Address[] = Array.isArray(remote?.book)
+      ? remote.book
+      : remote && remote.city
+        ? [remote as Address]
+        : [];
+    if (book.length === 0) return;
+
+    writeStoredAddresses(book);
+    setAddresses(book);
+    const def = book.find((a) => a.isDefault);
+    setSelectedAddressId(def ? def.id : book[0].id);
+  }, [user]);
 
   // Prefill the contact + address form from the signed-in customer, but never
   // skip the form itself — the user still sees and confirms every field.
@@ -174,11 +447,7 @@ export default function CheckoutPage() {
     if (!customerEmail && user.email && !String(user.email).endsWith("@meruveda.whatsapp")) {
       setCustomerEmail(user.email);
     }
-    setAddressForm((prev) => ({
-      ...prev,
-      fullName: prev.fullName || fullName,
-      phone: prev.phone || user.phone || "",
-    }));
+    // The address form itself takes name/phone from step 1, so nothing to prefill.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -189,10 +458,67 @@ export default function CheckoutPage() {
     return () => clearTimeout(t);
   }, [otpResendIn]);
 
+  // Restore a verification that already succeeded in this browser (page
+  // refresh, or a session established earlier). Without this the section stayed
+  // locked even though the customer had passed OTP verification.
+  useEffect(() => {
+    if (otpVerified) return;
+    try {
+      const verified = localStorage.getItem(OTP_VERIFIED_KEY);
+      if (verified && mobile && verified === normalizePhoneDigits(mobile)) {
+        setOtpVerified(true);
+        setOtpSent(false);
+        setOtpError("");
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }, [otpVerified, mobile]);
+
   const normalizeMobile = (value: string) => value.replace(/[^\d+]/g, "");
+
+  // Editing the mobile number invalidates an earlier verification, so the
+  // address section locks again until the new number is verified.
+  const resetVerification = (message = "") => {
+    setOtpVerified(false);
+    setOtpSent(false);
+    setOtpCode("");
+    setOtpError("");
+    setOtpMessage(message);
+    setOtpResendIn(0);
+    try {
+      localStorage.removeItem(OTP_VERIFIED_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  };
+
+  const handleMobileChange = (value: string) => {
+    const next = normalizeMobile(value);
+    const changed = next !== mobile;
+    setMobile(next);
+    if (changed && otpVerified) {
+      resetVerification("Mobile number changed — please verify it again.");
+    }
+  };
+
+  // Lets a verified customer unlock the number field (fields are locked on success).
+  const handleChangeNumber = () => {
+    resetVerification("Update your number and send a new OTP.");
+  };
+
+  // Turns transport / WhatsApp failures into something the customer can act on.
+  const describeOtpError = (err: any, fallback: string): string => {
+    const raw = err?.message || "";
+    if (!raw || raw === "Network Error" || /timeout|aborted/i.test(raw)) {
+      return "WhatsApp could not be reached right now. Please try again in a moment.";
+    }
+    return raw || fallback;
+  };
 
   const handleSendOtp = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (otpVerified) return;
     setOtpError("");
     setOtpMessage("");
 
@@ -210,7 +536,6 @@ export default function CheckoutPage() {
     try {
       const res = await sendOtp(mobile);
       setOtpSent(true);
-      setOtpVerified(false);
       setOtpResendIn(OTP_RESEND_SECONDS);
       setOtpMessage(
         res?.devOtp
@@ -218,7 +543,7 @@ export default function CheckoutPage() {
           : "OTP sent to your WhatsApp number."
       );
     } catch (err: any) {
-      setOtpError(err?.message || "Could not send the OTP. Please try again.");
+      setOtpError(describeOtpError(err, "Could not send the OTP. Please try again."));
     } finally {
       setIsSendingOtp(false);
     }
@@ -238,14 +563,13 @@ export default function CheckoutPage() {
           : "A new OTP has been sent."
       );
     } catch (err: any) {
-      setOtpError(err?.message || "Could not resend the OTP. Please try again.");
+      setOtpError(describeOtpError(err, "Could not resend the OTP. Please try again."));
     } finally {
       setIsSendingOtp(false);
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitOtp = async () => {
     setOtpError("");
     if (otpCode.replace(/\D/g, "").length !== 6) {
       setOtpError("Please enter the 6-digit OTP.");
@@ -255,13 +579,13 @@ export default function CheckoutPage() {
     try {
       // Registers an unknown number, logs an existing one in — every order.
       await verifyOtp(mobile, otpCode, contactName);
+      try {
+        localStorage.setItem(OTP_VERIFIED_KEY, normalizePhoneDigits(mobile));
+      } catch {
+        /* storage unavailable */
+      }
       setOtpVerified(true);
       setOtpMessage("Mobile number verified.");
-      setAddressForm((prev) => ({
-        ...prev,
-        fullName: prev.fullName || contactName,
-        phone: prev.phone || mobile,
-      }));
       // Keep the guest cart: merge it into the account now that we have a session.
       if (typeof window !== "undefined") {
         try {
@@ -271,10 +595,38 @@ export default function CheckoutPage() {
         }
       }
     } catch (err: any) {
-      setOtpError(err?.message || "Invalid OTP. Please try again.");
+      setOtpError(describeOtpError(err, "Invalid OTP. Please try again."));
     } finally {
       setIsVerifyingOtp(false);
     }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitOtp();
+  };
+
+  /**
+   * "Verify Mobile Number" — the CTA shown in the address section. Sends the
+   * OTP when one has not been requested yet, otherwise moves focus to the code
+   * field. It never silently unlocks anything: the code still has to be entered
+   * and accepted by the backend.
+   */
+  const handleVerifyMobileClick = async () => {
+    const digits = mobile.replace(/\D/g, "");
+    if (digits.length < 10) {
+      setOtpError("Please enter a valid 10-digit mobile number.");
+    } else if (!contactName.trim()) {
+      setOtpError("Please enter your name.");
+    } else if (!otpSent) {
+      await handleSendOtp();
+    }
+
+    document.getElementById("checkout-contact")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      const target = document.getElementById("checkout-otp") ? "checkout-otp" : "checkout-mobile";
+      document.getElementById(target)?.focus({ preventScroll: true });
+    }, 500);
   };
 
   if (isLoading) {
@@ -332,28 +684,172 @@ export default function CheckoutPage() {
   const codCharges = paymentMethod === "cod" ? 50 : 0;
   const finalTotal = subtotal - discountAmount + shippingCharges + codCharges;
 
-  // Address Addition
-  const handleAddNewAddress = (e: React.FormEvent) => {
-    e.preventDefault();
-    const created: Address = {
-      id: `addr-${Date.now()}`,
-      ...addressForm,
-      isDefault: addresses.length === 0,
-    };
-    const updated = [...addresses, created];
-    setAddresses(updated);
-    localStorage.setItem("meruveda_addresses", JSON.stringify(updated));
-    setSelectedAddressId(created.id);
+  // ---- Address validation ----
+  const emailValid = EMAIL_RE.test(customerEmail.trim());
+  const pincodeValid = PIN_RE.test(addressForm.pincode.trim());
+  const stateValid = INDIAN_STATES.includes(addressForm.state.trim());
+
+  const validateAddressForm = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!addressForm.house.trim()) errors.house = "House / Flat number is required.";
+    if (!addressForm.area.trim()) errors.area = "Lane / Street / Road is required.";
+    if (!addressForm.city.trim()) errors.city = "City is required.";
+    if (!stateValid) errors.state = "Select your state or union territory.";
+    if (!addressForm.pincode.trim()) errors.pincode = "PIN code is required.";
+    else if (!pincodeValid) errors.pincode = "PIN code must be exactly 6 digits.";
+    return errors;
+  };
+
+  const formErrors = validateAddressForm();
+  // Inline errors appear once a field has been typed into, or after a submit attempt.
+  const fieldError = (field: string, value: string) =>
+    addressSubmitted || (value || "").trim() !== "" ? formErrors[field] || "" : "";
+
+  // Email lives outside the address form, so it validates on its own.
+  const emailError =
+    !customerEmail.trim() ? "Email is required for order updates." : !emailValid ? "Enter a valid email address." : "";
+  const showEmailError = addressSubmitted || customerEmail.trim() !== "";
+
+  const selectedSavedAddress = addresses.find((a) => a.id === selectedAddressId);
+
+  const formAddressValid = Object.keys(formErrors).length === 0;
+
+  const savedAddressValid =
+    !!selectedSavedAddress &&
+    selectedSavedAddress.city.trim() !== "" &&
+    selectedSavedAddress.state.trim() !== "" &&
+    PIN_RE.test(selectedSavedAddress.zipCode.trim());
+
+  const deliveryAddressValid = usesAddressForm ? formAddressValid : savedAddressValid;
+  const addressValid = deliveryAddressValid && emailValid;
+
+  // The address of record: what the order, invoice, Shiprocket label and admin
+  // panel will all be built from.
+  const buildFormAddress = (): Address => ({
+    id: `addr-form`,
+    fullName: contactName.trim() || "Customer",
+    addressLine: formatAddressLine(addressForm),
+    city: addressForm.city.trim(),
+    state: addressForm.state.trim(),
+    zipCode: addressForm.pincode.trim(),
+    phone: mobile,
+    type: addressForm.type,
+    isDefault: addresses.length === 0,
+    addressLine1: addressForm.house.trim(),
+    addressLine2: addressForm.area.trim(),
+    landmark: addressForm.landmark.trim(),
+    country: "India",
+    pincode: addressForm.pincode.trim(),
+  });
+
+  const effectiveAddress: Address | null = usesAddressForm
+    ? (formAddressValid ? buildFormAddress() : null)
+    : (selectedSavedAddress || null);
+
+  // ---- Address book mutations ----
+  // Local (this browser) is the source of truth so guests keep their
+  // addresses; the same book is mirrored to the customer profile through the
+  // existing PUT /auth/profile endpoint so it is still there after a login.
+  const syncAddressBook = (next: Address[], selectId: string) => {
+    setAddresses(next);
+    writeStoredAddresses(next);
+    setSelectedAddressId(selectId);
+    if (!user) return;
+    const chosen = next.find((a) => a.id === selectId) || next[0];
+    saveProfile({ address: chosen ? { ...chosen, book: next } : { book: next } }).catch((err) =>
+      console.error("Failed to sync the address book", err)
+    );
+  };
+
+  const resetAddressForm = () => {
+    setAddressForm(emptyAddressForm());
+    setAddressSubmitted(false);
+    setEditingAddressId(null);
     setShowNewAddressForm(false);
+  };
+
+  const handleOpenAddAddress = () => {
+    setAddressForm(emptyAddressForm());
+    setAddressSubmitted(false);
+    setEditingAddressId(null);
+    setShowNewAddressForm(true);
+  };
+
+  const handleEditAddress = (addr: Address) => {
+    const { house, area } = splitAddressParts(addr);
     setAddressForm({
-      fullName: "",
-      addressLine: "",
-      city: "",
-      state: "",
-      zipCode: "",
-      phone: "",
-      type: "Home",
+      house,
+      area,
+      landmark: addr.landmark || "",
+      city: addr.city || "",
+      state: addr.state || "",
+      pincode: addr.pincode || addr.zipCode || "",
+      type: ADDRESS_TYPES.includes(addr.type as any) ? addr.type : "Home",
+      isDefault: !!addr.isDefault,
     });
+    setAddressSubmitted(false);
+    setEditingAddressId(addr.id);
+    setShowNewAddressForm(true);
+    window.setTimeout(
+      () => document.getElementById("new-address-form")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      60
+    );
+  };
+
+  const handleDeleteAddress = (id: string) => {
+    const next = addresses.filter((a) => a.id !== id);
+    let selectId = selectedAddressId;
+    if (selectedAddressId === id) {
+      selectId = next.find((a) => a.isDefault)?.id || next[0]?.id || "";
+    }
+    if (editingAddressId === id) resetAddressForm();
+    syncAddressBook(next, selectId);
+  };
+
+  const handleSetDefault = (id: string) => {
+    syncAddressBook(
+      addresses.map((a) => ({ ...a, isDefault: a.id === id })),
+      selectedAddressId || id
+    );
+  };
+
+  // Create or update — both use the same six fields.
+  const handleSaveAddress = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddressSubmitted(true);
+    if (Object.keys(formErrors).length > 0) return;
+
+    const editing = editingAddressId ? addresses.find((a) => a.id === editingAddressId) : undefined;
+    const others = editing ? addresses.length - 1 : addresses.length;
+    const makeDefault = addressForm.isDefault || others === 0;
+
+    const record: Address = {
+      id: editing ? editing.id : `addr-${Date.now()}`,
+      fullName: (contactName.trim() || editing?.fullName || "Customer").trim(),
+      addressLine: formatAddressLine(addressForm),
+      city: addressForm.city.trim(),
+      state: addressForm.state.trim(),
+      zipCode: addressForm.pincode.trim(),
+      phone: mobile || editing?.phone || "",
+      type: addressForm.type,
+      isDefault: makeDefault,
+      addressLine1: addressForm.house.trim(),
+      addressLine2: addressForm.area.trim(),
+      landmark: addressForm.landmark.trim(),
+      country: "India",
+      pincode: addressForm.pincode.trim(),
+    };
+
+    const next = editing
+      ? addresses.map((a) =>
+          a.id === record.id
+            ? record
+            : { ...a, isDefault: makeDefault ? false : a.isDefault }
+        )
+      : [...addresses.map((a) => (makeDefault ? { ...a, isDefault: false } : a)), record];
+
+    syncAddressBook(next, record.id);
+    resetAddressForm();
   };
 
   // Coupon Validation
@@ -412,8 +908,12 @@ export default function CheckoutPage() {
       return;
     }
 
-    if (!selectedAddressId) {
-      alert("Please select a shipping address.");
+    if (!addressValid || !effectiveAddress) {
+      setAddressSubmitted(true);
+      if (typeof window !== "undefined") {
+        const target = deliveryAddressValid && !emailValid ? "checkout-email" : "checkout-address";
+        document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
       return;
     }
 
@@ -423,7 +923,7 @@ export default function CheckoutPage() {
     }
 
     setIsPlacingOrder(true);
-    const selectedAddr = addresses.find((a) => a.id === selectedAddressId)!;
+    const selectedAddr = effectiveAddress;
 
     // Save the latest name / email / address against the account before the
     // order is created so the invoice and WhatsApp messages use fresh details.
@@ -432,12 +932,31 @@ export default function CheckoutPage() {
         name: contactName,
         email: customerEmail,
         phone: mobile,
-        address: { ...selectedAddr },
+        // `book` keeps the whole address book alongside the address of record
+        // so it is still available after a fresh login.
+        address: { ...selectedAddr, book: addresses },
       });
     } catch (profileErr) {
       // Never block checkout because a profile write failed.
       console.error("Failed to save profile", profileErr);
     }
+
+    // Same keys the order API already expects, plus additive parts the admin
+    // panel, customer export and address book read. orders.shipping_address is
+    // JSONB, so no schema change is involved.
+    const buildAddressPayload = () => ({
+      fullName: selectedAddr.fullName,
+      addressLine: selectedAddr.addressLine,
+      city: selectedAddr.city,
+      state: selectedAddr.state,
+      zipCode: selectedAddr.zipCode,
+      phone: selectedAddr.phone,
+      addressLine1: selectedAddr.addressLine1 || selectedAddr.addressLine || "",
+      addressLine2: selectedAddr.addressLine2 || "",
+      landmark: selectedAddr.landmark || "",
+      pincode: selectedAddr.pincode || selectedAddr.zipCode || "",
+      country: selectedAddr.country || "India",
+    });
 
     const baseCheckoutPayload = {
       items: cart.map(item => ({
@@ -452,22 +971,8 @@ export default function CheckoutPage() {
       tax: gstAmount,
       total: finalTotal,
       notes: orderNotes,
-      shipping_address: {
-        fullName: selectedAddr.fullName,
-        addressLine: selectedAddr.addressLine,
-        city: selectedAddr.city,
-        state: selectedAddr.state,
-        zipCode: selectedAddr.zipCode,
-        phone: selectedAddr.phone
-      },
-      billing_address: {
-        fullName: selectedAddr.fullName,
-        addressLine: selectedAddr.addressLine,
-        city: selectedAddr.city,
-        state: selectedAddr.state,
-        zipCode: selectedAddr.zipCode,
-        phone: selectedAddr.phone
-      }
+      shipping_address: buildAddressPayload(),
+      billing_address: buildAddressPayload()
     };
 
     try {
@@ -505,20 +1010,33 @@ export default function CheckoutPage() {
   };
 
   const inputClass =
-    "w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:border-gold focus:ring-1 focus:ring-gold/30 transition-all text-sm";
+    "w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:border-gold focus:ring-1 focus:ring-gold/30 transition-all text-sm bg-white text-gray-900 placeholder:text-gray-400";
   const labelClass = "block text-gray-700 font-medium mb-1 text-xs";
+  const errorClass = "block text-[11px] text-red-500 font-medium mt-1";
+
+  // Inline address errors — surfaced once a field is typed into or on submit.
+  const addrErr = {
+    pincode: fieldError("pincode", addressForm.pincode),
+    house: fieldError("house", addressForm.house),
+    area: fieldError("area", addressForm.area),
+    city: fieldError("city", addressForm.city),
+    state: fieldError("state", addressForm.state),
+  };
 
   return (
-    <div className="container mx-auto px-6 py-12 md:py-24">
+    <div className="container mx-auto px-6 py-12 pb-32 sm:pb-28 md:py-24 md:pb-32">
       <div className="flex items-center gap-2 text-xs text-gray-400 mb-8 border-b border-gray-100 pb-4">
         <Link href="/cart" className="hover:text-gold">Cart</Link>
         <ChevronRight size={12} />
         <span className="text-deep-purple font-semibold">Checkout</span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-        {/* Left Side: Steps */}
-        <div className="lg:col-span-2 space-y-8">
+      {/* Order Summary is the wider (≈60%) left column on desktop and comes
+          first when stacked on mobile. `order` is kept at every breakpoint so
+          the DOM order and the visual order never disagree. */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 xl:gap-12">
+        {/* Checkout steps — right column (≈40%) on desktop */}
+        <div className="order-2 lg:col-span-2 space-y-8">
 
           {/* STEP 1: CONTACT & WHATSAPP VERIFICATION (shown on EVERY order) */}
           <div id="checkout-contact" className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm scroll-mt-28">
@@ -537,21 +1055,21 @@ export default function CheckoutPage() {
                     value={contactName}
                     onChange={(e) => setContactName(e.target.value)}
                     className={inputClass}
-                    placeholder="Priya Sharma"
-                    disabled={otpVerified}
+                    placeholder="Enter your full name"
                   />
                 </div>
                 <div>
                   <label className={labelClass}>Mobile Number (WhatsApp)</label>
                   <div className="flex gap-2">
                     <input
+                      id="checkout-mobile"
                       type="tel"
                       required
+                      inputMode="numeric"
                       value={mobile}
-                      onChange={(e) => setMobile(normalizeMobile(e.target.value))}
+                      onChange={(e) => handleMobileChange(e.target.value)}
                       className={inputClass}
                       placeholder="98765 43210"
-                      disabled={otpVerified}
                     />
                     {!otpVerified && (
                       <button
@@ -571,29 +1089,38 @@ export default function CheckoutPage() {
                 <div className="border border-gold/30 bg-gold/5 rounded-xl p-4 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-end gap-3">
                     <div className="flex-1">
-                      <label className={labelClass}>Enter 6-digit OTP</label>
                       <input
+                        id="checkout-otp"
                         type="text"
                         inputMode="numeric"
                         autoComplete="one-time-code"
                         maxLength={6}
+                        autoFocus
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                        className={`${inputClass} tracking-[0.4em] font-mono text-center`}
-                        placeholder="------"
+                        onKeyDown={(e) => {
+                          // The outer form submits "Send OTP" — Enter here must verify instead.
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            submitOtp();
+                          }
+                        }}
+                        className={`${inputClass} font-mono text-center tracking-[0.4em] placeholder:tracking-normal placeholder:font-sans`}
+                        placeholder="Enter 6-digit OTP"
+                        aria-label="Enter 6-digit OTP"
                       />
                     </div>
                     <button
                       type="button"
                       onClick={handleVerifyOtp}
                       disabled={isVerifyingOtp || otpCode.length !== 6}
-                      className="bg-gold text-deep-purple px-6 py-2 text-xs font-bold rounded-lg hover:bg-gold-light disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      className="shrink-0 bg-gold text-deep-purple px-6 py-2 text-xs font-bold rounded-lg hover:bg-gold-light disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {isVerifyingOtp ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                       Verify
                     </button>
                   </div>
-                  <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
                     <span className="text-gray-500">
                       {otpMessage || "We sent a code to your WhatsApp."}
                     </span>
@@ -601,9 +1128,9 @@ export default function CheckoutPage() {
                       type="button"
                       onClick={handleResendOtp}
                       disabled={otpResendIn > 0 || isSendingOtp}
-                      className="text-gold font-bold disabled:text-gray-400 disabled:cursor-not-allowed"
+                      className="shrink-0 text-gold font-bold disabled:text-gray-400 disabled:cursor-not-allowed"
                     >
-                      {otpResendIn > 0 ? `Resend in ${otpResendIn}s` : "Resend OTP"}
+                      {otpResendIn > 0 ? `Resend OTP in ${otpResendIn}s` : "Resend OTP"}
                     </button>
                   </div>
                 </div>
@@ -612,194 +1139,317 @@ export default function CheckoutPage() {
               {otpError && <p className="text-[11px] text-red-500 font-medium">{otpError}</p>}
 
               {otpVerified && (
-                <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">
-                  <CheckCircle2 size={15} /> {mobile} verified — welcome{contactName ? `, ${contactName.split(" ")[0]}` : ""}!
+                <div className="flex flex-wrap items-center justify-between gap-2 border border-green-200 bg-green-50 rounded-xl px-4 py-3">
+                  <span className="flex items-center gap-2 text-xs font-bold text-green-700">
+                    <CheckCircle2 size={15} /> Verified ✓
+                    <span className="font-medium text-green-600">{mobile}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleChangeNumber}
+                    className="text-[11px] font-bold text-gold hover:text-gold-light underline underline-offset-2"
+                  >
+                    Change number
+                  </button>
                 </div>
               )}
             </form>
           </div>
 
-          {/* STEP 2: ADDRESS + EMAIL (revealed only after OTP verification) */}
-          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+          {/* STEP 2: DELIVERY ADDRESS + EMAIL (always visible and usable) */}
+          <div id="checkout-address" className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm scroll-mt-28">
             <h2 className="text-xl font-playfair font-bold text-deep-purple mb-6 flex items-center gap-2">
               <span className="w-6 h-6 bg-deep-purple text-white rounded-full text-xs flex items-center justify-center font-sans">2</span>
               Delivery Address &amp; Email
             </h2>
 
-            {otpVerified ? (
-              <>
-                <div className="mb-5">
-                  <label className={labelClass}>
-                    <span className="inline-flex items-center gap-1"><Mail size={12} /> Email (for order updates)</span>
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
-                    className={inputClass}
-                    placeholder="you@example.com"
-                  />
+            {/* Verification notice — the fields below stay fully usable; only
+                the final Pay / Place Order action waits for the OTP. */}
+            {!otpVerified && (
+              <div className="mb-5 flex flex-col gap-3 border border-gold/40 bg-gold/5 rounded-xl px-4 py-3 sm:flex-row sm:items-center">
+                <div className="flex items-start gap-2.5 flex-1">
+                  <Smartphone size={16} className="text-gold shrink-0 mt-0.5" />
+                  <p className="text-xs text-deep-purple leading-relaxed">
+                    <span className="font-bold">Mobile verification required.</span>{" "}
+                    Verify your WhatsApp number to place this order. You can enter the address meanwhile.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleVerifyMobileClick}
+                  className="shrink-0 bg-deep-purple text-white px-4 py-2 text-xs font-bold rounded-lg hover:bg-deep-purple/90 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Smartphone size={13} /> Verify Mobile Number
+                </button>
+              </div>
+            )}
 
+            {/* Saved addresses — selectable cards, never faded or greyed out */}
             {addresses.length > 0 && !showNewAddressForm && (
-              <div className="space-y-4 mb-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {addresses.map((addr) => (
-                    <label
-                      key={addr.id}
-                      className={`p-4 rounded-xl border cursor-pointer flex flex-col justify-between transition-all ${selectedAddressId === addr.id
-                        ? "border-gold bg-gold/5"
-                        : "border-gray-100 hover:border-gray-200"
+              <div className="mb-5">
+                <p className="text-[11px] font-bold text-deep-purple uppercase tracking-wider mb-3">
+                  Saved addresses
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {addresses.map((addr) => {
+                    const selected = selectedAddressId === addr.id;
+                    return (
+                      <div
+                        key={addr.id}
+                        onClick={() => setSelectedAddressId(addr.id)}
+                        className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                          selected
+                            ? "border-deep-purple ring-1 ring-deep-purple/20 bg-deep-purple/5"
+                            : "border-gray-200 bg-white hover:border-gray-300"
                         }`}
-                    >
-                      <div className="flex items-start gap-2.5">
-                        <input
-                          type="radio"
-                          name="selectedAddress"
-                          checked={selectedAddressId === addr.id}
-                          onChange={() => setSelectedAddressId(addr.id)}
-                          className="accent-gold mt-1"
-                        />
-                        <div className="text-xs text-gray-600">
-                          <p className="font-bold text-deep-purple text-sm mb-1">{addr.fullName} ({addr.type})</p>
-                          <p>{addr.addressLine}</p>
-                          <p>{addr.city}, {addr.state} - {addr.zipCode}</p>
-                          <p className="mt-1">Phone: {addr.phone}</p>
+                      >
+                        <label className="flex items-start gap-2.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="selectedAddress"
+                            checked={selected}
+                            onChange={() => setSelectedAddressId(addr.id)}
+                            aria-label={`Deliver to ${addr.fullName}`}
+                            className="mt-1 h-4 w-4 accent-[#2E0F36]"
+                          />
+                          <span className="min-w-0 flex-1 text-xs text-gray-600">
+                            <span className="flex flex-wrap items-center gap-1.5 mb-1">
+                              <span className="font-bold text-deep-purple text-sm">{addr.fullName}</span>
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-ivory border border-stone-100 text-deep-purple/80">
+                                {addr.type || "Home"}
+                              </span>
+                              {addr.isDefault && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gold/15 text-gold border border-gold/30">
+                                  <Star size={9} /> Default
+                                </span>
+                              )}
+                            </span>
+                            <span className="block leading-relaxed">{addr.addressLine}</span>
+                            <span className="block leading-relaxed">
+                              {addr.city}, {addr.state} - {addr.zipCode}
+                            </span>
+                            {addr.phone && <span className="block mt-1 text-gray-500">{addr.phone}</span>}
+                          </span>
+                        </label>
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 pl-6 pt-2 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditAddress(addr);
+                            }}
+                            className="text-[11px] font-bold text-deep-purple hover:text-gold flex items-center gap-1"
+                          >
+                            <Pencil size={11} /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAddress(addr.id);
+                            }}
+                            className="text-[11px] font-bold text-gray-500 hover:text-red-500 flex items-center gap-1"
+                          >
+                            <Trash2 size={11} /> Delete
+                          </button>
+                          {!addr.isDefault && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSetDefault(addr.id);
+                              }}
+                              className="text-[11px] font-bold text-gold hover:text-gold-light"
+                            >
+                              Set as default
+                            </button>
+                          )}
                         </div>
                       </div>
-                    </label>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <button
-                  onClick={() => setShowNewAddressForm(true)}
-                  className="text-xs text-gold hover:text-gold-light font-bold flex items-center gap-1 mt-2"
+                  type="button"
+                  onClick={handleOpenAddAddress}
+                  className="mt-4 text-xs text-gold hover:text-gold-light font-bold flex items-center gap-1"
                 >
                   <Plus size={14} /> Add New Address
                 </button>
               </div>
             )}
 
+            {/* Add / edit address form — six separate fields, never merged */}
             {(addresses.length === 0 || showNewAddressForm) && (
-              <form onSubmit={handleAddNewAddress} className="space-y-4 border border-gray-100 p-4 rounded-xl">
-                <h4 className="text-xs font-bold text-deep-purple uppercase tracking-wider">New Shipping Details</h4>
+              <form
+                id="new-address-form"
+                onSubmit={handleSaveAddress}
+                className="space-y-4 border border-gray-100 bg-gray-50/60 p-4 sm:p-5 rounded-xl scroll-mt-28"
+              >
+                <h4 className="flex items-center gap-1.5 text-xs font-bold text-deep-purple uppercase tracking-wider">
+                  <MapPin size={13} className="text-gold" />
+                  {editingAddressId ? "Edit delivery address" : "Add a new address"}
+                </h4>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className={labelClass}>Full Name</label>
+                    <label className={labelClass} htmlFor="address-house">House / Flat Number</label>
                     <input
+                      id="address-house"
                       type="text"
-                      required
-                      value={addressForm.fullName}
-                      onChange={(e) => setAddressForm(p => ({ ...p, fullName: e.target.value }))}
+                      autoComplete="address-line1"
+                      value={addressForm.house}
+                      onChange={(e) => setAddressForm((p) => ({ ...p, house: e.target.value }))}
                       className={inputClass}
-                      placeholder="Priya Sharma"
+                      placeholder="e.g. House No. 12, Flat 301"
+                    />
+                    {addrErr.house && <p className={errorClass}>{addrErr.house}</p>}
+                  </div>
+
+                  <div>
+                    <label className={labelClass} htmlFor="address-area">Lane / Street / Road</label>
+                    <input
+                      id="address-area"
+                      type="text"
+                      autoComplete="address-line2"
+                      value={addressForm.area}
+                      onChange={(e) => setAddressForm((p) => ({ ...p, area: e.target.value }))}
+                      className={inputClass}
+                      placeholder="e.g. MG Road, Lane 2"
+                    />
+                    {addrErr.area && <p className={errorClass}>{addrErr.area}</p>}
+                  </div>
+
+                  <div>
+                    <label className={labelClass} htmlFor="address-landmark">Landmark (Optional)</label>
+                    <input
+                      id="address-landmark"
+                      type="text"
+                      value={addressForm.landmark}
+                      onChange={(e) => setAddressForm((p) => ({ ...p, landmark: e.target.value }))}
+                      className={inputClass}
+                      placeholder="e.g. Near City Mall"
                     />
                   </div>
-                  <div>
-                    <label className={labelClass}>Phone Number</label>
-                    <input
-                      type="text"
-                      required
-                      value={addressForm.phone}
-                      onChange={(e) => setAddressForm(p => ({ ...p, phone: e.target.value }))}
-                      className={inputClass}
-                      placeholder="+91 98765 43210"
-                    />
-                  </div>
-                </div>
 
-                <div>
-                  <label className={labelClass}>Street Address</label>
-                  <input
-                    type="text"
-                    required
-                    value={addressForm.addressLine}
-                    onChange={(e) => setAddressForm(p => ({ ...p, addressLine: e.target.value }))}
-                    className={inputClass}
-                    placeholder="Apartment, building, street, colony..."
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className={labelClass}>City</label>
+                    <label className={labelClass} htmlFor="address-city">City</label>
                     <input
+                      id="address-city"
                       type="text"
-                      required
+                      autoComplete="address-level2"
                       value={addressForm.city}
-                      onChange={(e) => setAddressForm(p => ({ ...p, city: e.target.value }))}
+                      onChange={(e) => setAddressForm((p) => ({ ...p, city: e.target.value }))}
                       className={inputClass}
-                      placeholder="Bengaluru"
+                      placeholder="Enter your city"
                     />
+                    {addrErr.city && <p className={errorClass}>{addrErr.city}</p>}
                   </div>
+
                   <div>
-                    <label className={labelClass}>State</label>
-                    <input
-                      type="text"
-                      required
+                    <label className={labelClass} htmlFor="checkout-state">State / Union Territory</label>
+                    <StateSelect
+                      id="checkout-state"
                       value={addressForm.state}
-                      onChange={(e) => setAddressForm(p => ({ ...p, state: e.target.value }))}
+                      onChange={(state) => setAddressForm((p) => ({ ...p, state }))}
                       className={inputClass}
-                      placeholder="Karnataka"
+                      invalid={!!addrErr.state}
                     />
+                    {addrErr.state && <p className={errorClass}>{addrErr.state}</p>}
                   </div>
+
                   <div>
-                    <label className={labelClass}>ZIP Code</label>
+                    <label className={labelClass} htmlFor="address-pincode">PIN Code</label>
                     <input
+                      id="address-pincode"
                       type="text"
-                      required
-                      value={addressForm.zipCode}
-                      onChange={(e) => setAddressForm(p => ({ ...p, zipCode: e.target.value }))}
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      maxLength={6}
+                      value={addressForm.pincode}
+                      onChange={(e) =>
+                        setAddressForm((p) => ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))
+                      }
                       className={inputClass}
-                      placeholder="560103"
+                      placeholder="Enter 6-digit PIN code"
                     />
+                    {addrErr.pincode && <p className={errorClass}>{addrErr.pincode}</p>}
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center pt-2">
-                  <div className="flex gap-4">
-                    {["Home", "Work"].map((type) => (
-                      <label key={type} className="flex items-center gap-1 text-xs cursor-pointer">
-                        <input
-                          type="radio"
-                          name="newAddressType"
-                          checked={addressForm.type === type}
-                          onChange={() => setAddressForm(p => ({ ...p, type }))}
-                          className="accent-gold"
-                        />
-                        {type}
-                      </label>
-                    ))}
+                <div className="flex flex-wrap items-start justify-between gap-4 pt-1">
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-bold text-deep-purple uppercase tracking-wider">Address type</p>
+                    <div className="flex flex-wrap gap-4">
+                      {ADDRESS_TYPES.map((type) => (
+                        <label key={type} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="newAddressType"
+                            checked={addressForm.type === type}
+                            onChange={() => setAddressForm((p) => ({ ...p, type }))}
+                            className="accent-[#2E0F36]"
+                          />
+                          {type}
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    {addresses.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowNewAddressForm(false)}
-                        className="px-3 py-1.5 border border-gray-200 text-xs font-semibold rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                    )}
+
+                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer pt-4">
+                    <input
+                      type="checkbox"
+                      checked={addressForm.isDefault}
+                      onChange={(e) => setAddressForm((p) => ({ ...p, isDefault: e.target.checked }))}
+                      className="h-4 w-4 accent-[#2E0F36]"
+                    />
+                    Set as default delivery address
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  {addresses.length > 0 && (
                     <button
-                      type="submit"
-                      className="bg-deep-purple text-white px-4 py-1.5 text-xs font-bold rounded-lg hover:bg-deep-purple/90"
+                      type="button"
+                      onClick={resetAddressForm}
+                      className="px-4 py-2 border border-gray-200 bg-white text-xs font-semibold rounded-lg hover:bg-gray-50 transition-colors"
                     >
-                      Use Address
+                      Cancel
                     </button>
-                  </div>
+                  )}
+                  <button
+                    type="submit"
+                    className="bg-deep-purple text-white px-5 py-2 text-xs font-bold rounded-lg hover:bg-deep-purple/90 transition-colors"
+                  >
+                    Save Address
+                  </button>
                 </div>
               </form>
             )}
-              </>
-            ) : (
-              <div className="border border-dashed border-gray-200 rounded-xl p-8 text-center">
-                <Smartphone size={26} className="mx-auto text-gold mb-3" />
-                <p className="text-sm font-bold text-deep-purple">Verify your mobile number to continue</p>
-                <p className="text-xs text-gray-400 mt-1">Complete step 1 — it only takes a few seconds.</p>
-              </div>
-            )}
+
+            {/* Email — kept separate from the address form */}
+            <div id="checkout-email" className="mt-6 pt-5 border-t border-gray-100 scroll-mt-28">
+              <label className={labelClass} htmlFor="checkout-email-input">
+                <span className="inline-flex items-center gap-1">
+                  <Mail size={12} /> Email (for order updates)
+                </span>
+              </label>
+              <input
+                id="checkout-email-input"
+                type="email"
+                autoComplete="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                className={inputClass}
+                placeholder="Enter your email address"
+              />
+              {showEmailError && emailError ? <p className={errorClass}>{emailError}</p> : null}
+              <p className="text-[11px] text-gray-400 mt-1.5">
+                Order confirmation and tracking updates are sent here.
+              </p>
+            </div>
           </div>
 
           {/* STEP 3: PAYMENT METHOD */}
@@ -882,8 +1532,8 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Right Side: Order Summary */}
-        <div className="space-y-6">
+        {/* Order Summary — left column (≈60%) on desktop, first when stacked */}
+        <div className="order-1 lg:col-span-3 space-y-6">
           <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm sticky top-24">
             <h3 className="text-lg font-playfair font-bold text-deep-purple mb-4 border-b border-gray-100 pb-3">
               Order Summary
@@ -957,7 +1607,7 @@ export default function CheckoutPage() {
               )}
 
               {(() => {
-                const selectedAddr = addresses.find((a) => a.id === selectedAddressId);
+                const selectedAddr = effectiveAddress;
                 const isIntraState = selectedAddr?.state ? isRajasthan(selectedAddr.state) : true;
 
                 if (isIntraState) {
@@ -991,7 +1641,7 @@ export default function CheckoutPage() {
             {/* Submit Action */}
             <button
               onClick={handlePlaceOrder}
-              disabled={isPlacingOrder || !isServiceable || !otpVerified}
+              disabled={isPlacingOrder || !isServiceable || !otpVerified || !addressValid}
               className="w-full bg-gold text-deep-purple font-bold py-3.5 rounded-xl hover:bg-gold-light transition-all flex items-center justify-center gap-2 text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isPlacingOrder ? (
@@ -1001,12 +1651,29 @@ export default function CheckoutPage() {
                 </>
               ) : !otpVerified ? (
                 "Verify mobile number to continue"
+              ) : !deliveryAddressValid ? (
+                "Complete address to continue"
+              ) : !emailValid ? (
+                "Enter a valid email to continue"
               ) : paymentMethod === "payu" ? (
-                `Proceed to Pay Online (₹${finalTotal.toFixed(2)})`
+                `Pay Now (₹${finalTotal.toFixed(2)})`
               ) : (
-                `Place COD Order (₹${finalTotal.toFixed(2)})`
+                `Place Order (₹${finalTotal.toFixed(2)})`
               )}
             </button>
+
+            {!otpVerified && (
+              <p className="text-[11px] text-gray-400 text-center mt-2">
+                Verify your mobile number before placing the order.
+              </p>
+            )}
+            {otpVerified && !addressValid && (
+              <p className="text-[11px] text-gray-400 text-center mt-2">
+                {!deliveryAddressValid
+                  ? "Choose a saved address or complete every required address field."
+                  : "Enter a valid email so we can send order updates."}
+              </p>
+            )}
           </div>
         </div>
       </div>

@@ -4,13 +4,17 @@ import { useCart } from "@/context/CartContext";
 import { useWishlist, WishlistItem } from "@/context/WishlistContext";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Heart, ShoppingCart, Trash2 } from "lucide-react";
 
 export default function WishlistPage() {
-  const { addToCart } = useCart();
+  const { cart, addToCart } = useCart();
   const { wishlist, removeFromWishlist } = useWishlist();
+  const router = useRouter();
 
   const handleAddToCart = (item: WishlistItem) => {
+    // Already in the cart — don't add a duplicate line.
+    if (cart.some((entry) => entry.id === item.id)) return;
     addToCart({
       id: item.id,
       name: item.name,
@@ -19,6 +23,23 @@ export default function WishlistPage() {
     });
     // Remove from wishlist once added to cart
     removeFromWishlist(item.id);
+  };
+
+  // Buy Now: add qty 1 (never increment an existing line), then go straight to the cart.
+  const handleBuyNow = async (item: WishlistItem) => {
+    try {
+      const alreadyInCart = cart.some((entry) => entry.id === item.id);
+      if (!alreadyInCart) {
+        await addToCart({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          image: item.image
+        });
+      }
+    } finally {
+      router.push("/cart");
+    }
   };
 
   return (
@@ -53,19 +74,27 @@ export default function WishlistPage() {
                   <p className="text-rust font-bold text-sm mt-1">₹{item.price.toFixed(2)}</p>
                 </div>
                 
-                <div className="flex gap-2 mt-4">
-                  <button 
-                    onClick={() => handleAddToCart(item)}
-                    className="flex-1 bg-deep-purple text-white hover:bg-deep-purple/90 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                <div className="mt-4 space-y-2">
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleAddToCart(item)}
+                      className="flex-1 min-w-0 border border-gold text-gold hover:bg-gold hover:text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <ShoppingCart size={13} /> Add to Cart
+                    </button>
+                    <button 
+                      onClick={() => removeFromWishlist(item.id)}
+                      className="p-2 border border-gray-200 hover:bg-red-50 hover:text-red-500 rounded-lg text-gray-400 transition-colors"
+                      aria-label="Remove item"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => handleBuyNow(item)}
+                    className="w-full bg-deep-purple text-white hover:bg-deep-purple/90 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                   >
-                    <ShoppingCart size={13} /> Add to Cart
-                  </button>
-                  <button 
-                    onClick={() => removeFromWishlist(item.id)}
-                    className="p-2 border border-gray-200 hover:bg-red-50 hover:text-red-500 rounded-lg text-gray-400 transition-colors"
-                    aria-label="Remove item"
-                  >
-                    <Trash2 size={14} />
+                    Buy Now
                   </button>
                 </div>
               </div>

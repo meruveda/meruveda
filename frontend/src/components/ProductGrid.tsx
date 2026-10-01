@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
@@ -9,13 +10,32 @@ import { useAuth } from "@/context/AuthContext";
 export default function ProductGrid({ products }: { products: any[] }) {
   const { cart, addToCartGuarded, updateQuantity } = useCart();
   const { isAuthenticated } = useAuth();
+  const router = useRouter();
 
   const handleAddToCart = (product: { id: string; name: string; price: number; img: string; gst?: number }) => {
+    // Already in the cart? Do nothing — the quantity stepper is showing instead.
+    if (cart.some((item) => item.id === product.id)) return;
     addToCartGuarded(
       { id: product.id, name: product.name, price: product.price, image: product.img, gst: product.gst },
       isAuthenticated,
       () => {} // No login required to shop — the checkout form collects identity.
     );
+  };
+
+  // Buy Now: add qty 1 (never increment an existing line), then go straight to the cart.
+  const handleBuyNow = async (product: { id: string; name: string; price: number; img: string; gst?: number }) => {
+    try {
+      const alreadyInCart = cart.some((item) => item.id === product.id);
+      if (!alreadyInCart) {
+        await addToCartGuarded(
+          { id: product.id, name: product.name, price: product.price, image: product.img, gst: product.gst },
+          isAuthenticated,
+          () => {}
+        );
+      }
+    } finally {
+      router.push("/cart");
+    }
   };
 
   return (
@@ -66,7 +86,7 @@ export default function ProductGrid({ products }: { products: any[] }) {
             </div>
           </Link>
 
-          <div className="px-5 pb-5 bg-white">
+          <div className="px-5 pb-5 bg-white space-y-2">
             {(() => {
               const cartItem = cart.find(item => item.id === product.id);
               if (cartItem) {
@@ -93,12 +113,18 @@ export default function ProductGrid({ products }: { products: any[] }) {
               return (
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAddToCart(product); }}
-                  className="w-full py-2 h-[42px] border border-gold text-gold rounded font-medium hover:bg-gold hover:text-white transition-colors"
+                  className="w-full py-2 h-[42px] border border-gold text-gold rounded font-medium text-[11px] sm:text-xs hover:bg-gold hover:text-white transition-colors"
                 >
                   Add to Cart
                 </button>
               );
             })()}
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleBuyNow(product); }}
+              className="w-full h-[42px] bg-deep-purple text-white rounded font-bold text-[11px] sm:text-xs tracking-wide hover:bg-deep-purple/90 transition-colors"
+            >
+              Buy Now
+            </button>
           </div>
         </div>
       ))}

@@ -55,6 +55,14 @@ export default function Header() {
 
       {/* Right Actions */}
       <div className="flex items-center gap-4">
+        {/* Shop Now — compact pill sitting right beside the cart */}
+        <Link
+          href="/products"
+          className="shrink-0 whitespace-nowrap rounded-full border border-gold/45 bg-gold px-2.5 py-1 text-[11px] font-bold tracking-wide text-plum-deep hover:bg-gold-light transition-colors sm:px-4 sm:py-1.5 sm:text-xs"
+        >
+          Shop Now
+        </Link>
+
         {/* Cart */}
         <Link
           href="/cart"

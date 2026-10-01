@@ -86,6 +86,22 @@ export const verifyOtp = async (req: Request, res: Response, next: NextFunction)
  * Persist the details collected in the checkout form (name / email / address).
  * Called after OTP verification so the latest form values always win.
  */
+
+// `users.address` is introduced by database/deltas/005. When that delta has not
+// been applied yet the column does not exist, and selecting/patching it would
+// fail the entire profile update — silently dropping name, email and phone as
+// well. Probe the column and skip it until the migration has run.
+let addressColumnOk = false;
+
+async function supportsAddressColumn(): Promise<boolean> {
+  if (addressColumnOk) return true;
+  const { error } = await supabase.from('users').select('address').limit(1);
+  // Only remember successes so a freshly applied migration is picked up without
+  // a restart, while transient failures are simply retried next time.
+  addressColumnOk = !error;
+  return !error;
+}
+
 export const updateCheckoutProfile = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;
@@ -98,7 +114,10 @@ export const updateCheckoutProfile = async (req: Request, res: Response, next: N
     const resolvedLast = lastName ?? (name ? String(name).trim().split(/\s+/).slice(1).join(' ') : undefined);
     if (resolvedFirst !== undefined && resolvedFirst !== '') patch.first_name = resolvedFirst;
     if (resolvedLast !== undefined) patch.last_name = resolvedLast || null;
-    if (address !== undefined) patch.address = address;
+
+    const persistAddress = address !== undefined ? await supportsAddressColumn() : false;
+    if (persistAddress) patch.address = address;
+
     if (phone) {
       const normalized = normalizePhone(phone);
       if (normalized) patch.phone = normalized;
@@ -115,14 +134,25 @@ export const updateCheckoutProfile = async (req: Request, res: Response, next: N
       if (!owner || owner.id === userId) patch.email = cleanEmail;
     }
 
-    const { data: updated, error } = await supabase
-      .from('users')
-      .update(patch)
-      .eq('id', userId)
-      .select('id, email, first_name, last_name, phone, role, active, address')
-      .single();
+    // Two literal selects: a dynamically built column list makes the Supabase
+    // client fall back to an untyped result, and the missing-column case has to
+    // be kept out of the request entirely.
+    const result = persistAddress
+      ? await supabase
+          .from('users')
+          .update(patch)
+          .eq('id', userId)
+          .select('id, email, first_name, last_name, phone, role, active, address')
+          .single()
+      : await supabase
+          .from('users')
+          .update(patch)
+          .eq('id', userId)
+          .select('id, email, first_name, last_name, phone, role, active')
+          .single();
 
-    if (error) throw error;
+    if (result.error) throw result.error;
+    const updated = result.data as any;
 
     res.json({
       message: 'Profile updated.',
@@ -133,7 +163,7 @@ export const updateCheckoutProfile = async (req: Request, res: Response, next: N
         lastName: updated.last_name,
         phone: updated.phone,
         role: updated.role,
-        address: updated.address,
+        ...(persistAddress ? { address: updated.address } : {}),
       },
     });
   } catch (error) {

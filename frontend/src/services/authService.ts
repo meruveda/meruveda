@@ -10,6 +10,8 @@ export interface AuthUser {
   role: UserRole;
   avatar?: string;
   phone?: string;
+  /** Saved by PUT /auth/profile during checkout; carries the address book. */
+  address?: any;
 }
 
 export interface AuthResponse {
