@@ -11,7 +11,7 @@ node_modules/
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
 # next.js and vite
 .next/
@@ -25,6 +25,7 @@ build/
 # misc
 .DS_Store
 *.pem
+uploads/
 
 # debug
 npm-debug.log*
