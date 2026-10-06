@@ -1057,7 +1057,9 @@ export default function CheckoutPage() {
               Contact &amp; Verification
             </h2>
 
-            <form onSubmit={handleSendOtp} className="space-y-4">
+            {/* OTP DISABLED — original: <form onSubmit={handleSendOtp}>. Enter-key
+                submit neutralized while the OTP feature is commented out. */}
+            <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Full Name</label>
@@ -1083,6 +1085,10 @@ export default function CheckoutPage() {
                       className={inputClass}
                       placeholder="98765 43210"
                     />
+                    {/* OTP DISABLED — Send/Resend OTP button commented out (kept
+                        below for re-enable). Verification is unavailable, so the
+                        Pay / Place Order button stays blocked. */}
+                    {/*
                     {!otpVerified && (
                       <button
                         type="submit"
@@ -1093,10 +1099,21 @@ export default function CheckoutPage() {
                         {otpSent ? "Resend" : "Send OTP"}
                       </button>
                     )}
+                    */}
+                    <span
+                      title="Verification codes are temporarily unavailable"
+                      className="shrink-0 bg-gray-100 text-gray-400 px-4 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-not-allowed"
+                    >
+                      <Smartphone size={14} />
+                      Unavailable
+                    </span>
                   </div>
                 </div>
               </div>
 
+              {/* OTP DISABLED — OTP entry / Verify / Resend block commented out
+                  (kept below for re-enable). */}
+              {/*
               {otpSent && !otpVerified && (
                 <div className="border border-gold/30 bg-gold/5 rounded-xl p-4 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-end gap-3">
@@ -1147,6 +1164,7 @@ export default function CheckoutPage() {
                   </div>
                 </div>
               )}
+              */}
 
               {otpError && <p className="text-[11px] text-red-500 font-medium">{otpError}</p>}
 
@@ -1175,17 +1193,18 @@ export default function CheckoutPage() {
               Delivery Address &amp; Email
             </h2>
 
-            {/* Verification notice — the fields below stay fully usable; only
-                the final Pay / Place Order action waits for the OTP. */}
+            {/* OTP DISABLED — verification notice kept (ordering still blocked),
+                but the "Verify Mobile Number" trigger below is commented out. */}
             {!otpVerified && (
               <div className="mb-5 flex flex-col gap-3 border border-gold/40 bg-gold/5 rounded-xl px-4 py-3 sm:flex-row sm:items-center">
                 <div className="flex items-start gap-2.5 flex-1">
                   <Smartphone size={16} className="text-gold shrink-0 mt-0.5" />
                   <p className="text-xs text-deep-purple leading-relaxed">
                     <span className="font-bold">Mobile verification required.</span>{" "}
-                    Verify your WhatsApp number to place this order. You can enter the address meanwhile.
+                    Verification codes are temporarily unavailable, so ordering is paused. You can still enter the address meanwhile.
                   </p>
                 </div>
+                {/*
                 <button
                   type="button"
                   onClick={handleVerifyMobileClick}
@@ -1193,6 +1212,7 @@ export default function CheckoutPage() {
                 >
                   <Smartphone size={13} /> Verify Mobile Number
                 </button>
+                */}
               </div>
             )}
 

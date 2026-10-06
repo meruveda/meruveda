@@ -5,16 +5,19 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Smartphone } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
-/**
- * Myntra-style Login / Signup gate shown on /profile for guests.
- *
- * Same WhatsApp-OTP backend as the checkout form (auto-register on unknown
- * numbers, login on known ones) — but rendered inline so the profile icon
- * never bounces the shopper to checkout. After verification the shopper
- * lands on `next` (a validated same-site path) or stays on their profile.
- */
+// OTP DISABLED — whole file commented out below (kept for re-enable).
+// (Was: Myntra-style Login / Signup gate shown on /profile for guests.
+// Same WhatsApp-OTP backend as the checkout form (auto-register on unknown
+// numbers, login on known ones) — but rendered inline so the profile icon
+// never bounces the shopper to checkout. After verification the shopper
+// lands on `next` (a validated same-site path) or stays on their profile.)
 
-/** Only same-site app paths; never external, protocol-relative or /login. */
+/* TEMPORARILY DISABLED — everything below is commented out.
+   To re-enable: delete this opener, the closer at end of file, and restore
+   the two `//` comment lines above back to block comments if desired.
+
+
+// Only same-site app paths; never external, protocol-relative or /login.
 export function safeNext(raw: string | null): string | null {
   if (!raw) return null;
   if (!raw.startsWith("/") || raw.startsWith("//")) return null;
@@ -254,3 +257,6 @@ export default function ProfileLoginGate({ next }: { next: string | null }) {
     </section>
   );
 }
+
+// END OTP DISABLED — closer for the wrapper opened at the top of this file.
+*/
