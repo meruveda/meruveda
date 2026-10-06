@@ -41,8 +41,8 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      // Client-side twin of the middleware rule (/profile is disabled).
-      router.push("/checkout");
+      // Client-side twin of the middleware rule: email login, then back here.
+      router.push(`/login?next=${encodeURIComponent(pathname)}`);
     }
   }, [isLoading, isAuthenticated, router, pathname]);
 

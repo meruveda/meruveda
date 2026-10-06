@@ -314,7 +314,7 @@ function writeStoredAddresses(list: Address[]) {
 
 export default function CheckoutPage() {
   const { cart, cartTotal, removeFromCart, updateQuantity } = useCart();
-  const { user, isLoading, sendOtp, resendOtp, verifyOtp, saveProfile } = useAuth();
+  const { user, isAuthenticated, isLoading, sendOtp, resendOtp, verifyOtp, saveProfile } = useAuth();
   const router = useRouter();
 
   // No separate login screen: the checkout form itself is the login.
@@ -910,12 +910,13 @@ export default function CheckoutPage() {
     form.submit();
   };
 
-  // Place Order / Pay Action
+  // Place Order / Pay Action — requires a signed-in account (email login).
+  // (OTP verification is commented out; the old account setup is the gate.)
   const handlePlaceOrder = async () => {
-    if (!otpVerified) {
-      setOtpError("Please verify your mobile number with the OTP before placing the order.");
+    if (!isAuthenticated || !user) {
+      setOtpError("Please log in to place your order.");
       if (typeof window !== "undefined") {
-        document.getElementById("checkout-contact")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        router.push(`/login?next=${encodeURIComponent("/checkout")}`);
       }
       return;
     }
@@ -1054,7 +1055,7 @@ export default function CheckoutPage() {
           <div id="checkout-contact" className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm scroll-mt-28">
             <h2 className="text-xl font-playfair font-bold text-deep-purple mb-6 flex items-center gap-2">
               <span className="w-6 h-6 bg-deep-purple text-white rounded-full text-xs flex items-center justify-center font-sans">1</span>
-              Contact &amp; Verification
+              Contact Details
             </h2>
 
             {/* OTP DISABLED — original: <form onSubmit={handleSendOtp}>. Enter-key
@@ -1193,17 +1194,22 @@ export default function CheckoutPage() {
               Delivery Address &amp; Email
             </h2>
 
-            {/* OTP DISABLED — verification notice kept (ordering still blocked),
-                but the "Verify Mobile Number" trigger below is commented out. */}
-            {!otpVerified && (
+            {/* Old setup — ordering needs a signed-in account (OTP commented out). */}
+            {!isAuthenticated && (
               <div className="mb-5 flex flex-col gap-3 border border-gold/40 bg-gold/5 rounded-xl px-4 py-3 sm:flex-row sm:items-center">
                 <div className="flex items-start gap-2.5 flex-1">
                   <Smartphone size={16} className="text-gold shrink-0 mt-0.5" />
                   <p className="text-xs text-deep-purple leading-relaxed">
-                    <span className="font-bold">Mobile verification required.</span>{" "}
-                    Verification codes are temporarily unavailable, so ordering is paused. You can still enter the address meanwhile.
+                    <span className="font-bold">Login required.</span>{" "}
+                    Log in to place this order. You can enter the address meanwhile.
                   </p>
                 </div>
+                <Link
+                  href={`/login?next=${encodeURIComponent("/checkout")}`}
+                  className="shrink-0 bg-deep-purple text-white px-4 py-2 text-xs font-bold rounded-lg hover:bg-deep-purple/90 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Smartphone size={13} /> Login to Order
+                </Link>
                 {/*
                 <button
                   type="button"
@@ -1710,10 +1716,10 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Submit Action */}
+            {/* Submit Action — signed-in account required (old setup). */}
             <button
               onClick={handlePlaceOrder}
-              disabled={isPlacingOrder || !isServiceable || !otpVerified || !addressValid}
+              disabled={isPlacingOrder || !isServiceable || !isAuthenticated || !addressValid}
               className="w-full bg-gold text-deep-purple font-bold py-3.5 rounded-xl hover:bg-gold-light transition-all flex items-center justify-center gap-2 text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isPlacingOrder ? (
@@ -1721,8 +1727,8 @@ export default function CheckoutPage() {
                   <Loader2 size={18} className="animate-spin" />
                   Processing...
                 </>
-              ) : !otpVerified ? (
-                "Verify mobile number to continue"
+              ) : !isAuthenticated ? (
+                "Login to continue"
               ) : !deliveryAddressValid ? (
                 "Complete address to continue"
               ) : !emailValid ? (
@@ -1734,12 +1740,20 @@ export default function CheckoutPage() {
               )}
             </button>
 
-            {!otpVerified && (
+            {!isAuthenticated && (
               <p className="text-[11px] text-gray-400 text-center mt-2">
-                Verify your mobile number before placing the order.
+                Please{" "}
+                <Link href={`/login?next=${encodeURIComponent("/checkout")}`} className="font-bold text-deep-purple hover:underline">
+                  log in
+                </Link>{" "}
+                to place your order. New here?{" "}
+                <Link href={`/signup?next=${encodeURIComponent("/checkout")}`} className="font-bold text-deep-purple hover:underline">
+                  Create an account
+                </Link>
+                .
               </p>
             )}
-            {otpVerified && !addressValid && (
+            {isAuthenticated && !addressValid && (
               <p className="text-[11px] text-gray-400 text-center mt-2">
                 {!deliveryAddressValid
                   ? "Choose a saved address or complete every required address field."

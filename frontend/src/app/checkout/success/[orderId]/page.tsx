@@ -60,9 +60,8 @@ export default function CheckoutSuccessPage({ params }: { params: Promise<{ orde
 
   useEffect(() => {
     if (!authLoading && !user) {
-      // Order-success links need a session; /profile is currently disabled
-      // so fall back to checkout (OTP login) for now.
-      router.replace("/checkout");
+      // Order-success links need a session: email login, then back here.
+      router.replace(`/login?next=${encodeURIComponent(`/checkout/success/${orderId}`)}`);
     }
   }, [authLoading, user, router, orderId]);
 
