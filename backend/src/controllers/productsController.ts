@@ -5,7 +5,16 @@ export const getProducts = async (req: Request, res: Response, next: NextFunctio
   try {
     const result = await productService.getProducts(req.query);
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
+    // Vercel logs are the only way to see the real cause of a 500 in prod —
+    // include query + underlying Supabase message here.
+    console.error('[Products] getProducts failed:', {
+      query: req.query,
+      message: error?.message || error,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+    });
     next(error);
   }
 };

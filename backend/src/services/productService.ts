@@ -1,4 +1,5 @@
 import { supabase } from '../database/supabase';
+import { config } from '../config/env';
 import { slugify, toCamelCase } from '@meruveda/shared';
 import { storageService } from './storageService';
 
@@ -56,6 +57,15 @@ const buildProductData = (rawData: any) => {
 
 export const productService = {
   async getProducts(params: any) {
+    // Fail with an actionable message instead of a cryptic fetch failure
+    // when the backend service is missing its Supabase env vars on Vercel
+    // (local dev works because backend/.env exists there).
+    if (!config.supabaseUrl || !config.supabaseServiceKey) {
+      throw new Error(
+        'Supabase is not configured (SUPABASE_URL / SUPABASE_SERVICE_KEY missing). ' +
+        'Set them on the backend service in Vercel and redeploy.'
+      );
+    }
     const { isFeatured, categoryId, search, status, stockStatus, page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'desc' } = params;
 
     let query = supabase.from('products').select('*, categories(id, name, slug)', { count: 'exact' });

@@ -8,13 +8,18 @@ export const metadata = {
 };
 
 async function getProducts() {
+  const targetUrl = `${API_BASE_URL}/products`;
   try {
-    const targetUrl = `${API_BASE_URL}/products`;
     const res = await fetch(targetUrl, {
       cache: 'no-store'
     });
     if (!res.ok) {
-      throw new Error(`Failed to fetch products from ${targetUrl}. Status: ${res.status} ${res.statusText}`);
+      // Log the full internal URL server-side only — never expose the
+      // backend service origin (vercel-infra.com) to the browser.
+      console.error(`[Products] backend fetch failed: ${targetUrl} -> ${res.status} ${res.statusText}`);
+      throw new Error(
+        `Products service returned ${res.status}. Please check the backend service logs and /api/health.`
+      );
     }
     const json = await res.json();
     return {
