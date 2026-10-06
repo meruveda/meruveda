@@ -1026,7 +1026,7 @@ export default function CheckoutPage() {
   return (
     <div className="container mx-auto px-6 py-12 pb-32 sm:pb-28 md:py-24 md:pb-32">
       <div className="flex items-center gap-2 text-xs text-gray-400 mb-8 border-b border-gray-100 pb-4">
-        <Link href="/cart" className="hover:text-gold">Cart</Link>
+        <Link href="/products" className="hover:text-gold">Shop</Link>
         <ChevronRight size={12} />
         <span className="text-deep-purple font-semibold">Checkout</span>
       </div>

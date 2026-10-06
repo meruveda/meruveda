@@ -8,6 +8,10 @@ class ReviewService {
     return rawData.map((r: any) => ({
       ...r,
       body: r.comment || r.body || '',
+      reply: r.reply || '',
+      createdAt: r.createdAt || r.created_at || '',
+      // The API returns snake_case; the Reviews page reads the camelCase flag.
+      isFeatured: Boolean(r.isFeatured ?? r.is_featured),
       customerName: r.users ? `${r.users.first_name || ''} ${r.users.last_name || ''}`.trim() || r.users.email || 'Customer' : 'Customer',
       productName: r.products?.name || 'Product'
     }));

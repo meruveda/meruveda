@@ -240,7 +240,7 @@ export const CustomerProfilePage: React.FC = () => {
                   <div key={item.id} className="flex items-center justify-between border-b dark:border-slate-800 pb-2 last:border-0 last:pb-0">
                     <div className="flex items-center gap-3">
                       <img
-                        src={item.products?.thumbnail || item.products?.images?.[0]?.url || 'https://via.placeholder.com/100'}
+                        src={item.products?.thumbnail || item.products?.images?.[0]?.url || '/images/placeholder-product.png'}
                         alt={item.products?.name}
                         className="h-10 w-10 rounded object-cover"
                       />

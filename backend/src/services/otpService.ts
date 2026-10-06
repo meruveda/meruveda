@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { supabase } from '../database/supabase';
 import { config } from '../config/env';
+import { hasColumn, hasTable } from './schemaGuard';
 import { normalizePhone, sendOnce, WHATSAPP_TEMPLATES, sendTemplate } from './whatsappService';
 
 const OTP_TTL_MINUTES = 5;
@@ -10,6 +11,19 @@ const RESEND_COOLDOWN_SECONDS = 45;
 const PURPOSE = 'checkout_login';
 
 export type OtpFailureReason = 'not_found' | 'expired' | 'already_used' | 'too_many_attempts' | 'invalid';
+
+/**
+ * `otps` is created by database/deltas/005. Refuse with a clear 503 rather than
+ * letting PostgREST's missing-table error bubble up as an opaque 500 — the
+ * checkout step this powers cannot fall back to anything else.
+ */
+async function assertOtpStoreAvailable(): Promise<void> {
+  if (await hasTable('otps')) return;
+  console.error('[OTP] Table "otps" is missing — apply database/deltas/005_otp_whatsapp_review_requests.sql.');
+  throw Object.assign(new Error('Sign-in with OTP is temporarily unavailable. Please try again shortly.'), {
+    status: 503,
+  });
+}
 
 export const otpService = {
   ttlMinutes: OTP_TTL_MINUTES,
@@ -23,6 +37,8 @@ export const otpService = {
     if (!phone || phone.length < 10) {
       throw Object.assign(new Error('Please enter a valid mobile number.'), { status: 400 });
     }
+
+    await assertOtpStoreAvailable();
 
     // Cooldown so the endpoint cannot be abused for spam.
     const { data: recent } = await supabase
@@ -84,6 +100,8 @@ export const otpService = {
     const submitted = String(code || '').replace(/\D/g, '');
     if (!phone || !submitted) return { ok: false, reason: 'invalid' };
 
+    await assertOtpStoreAvailable();
+
     const { data: rows } = await supabase
       .from('otps')
       .select('*')
@@ -135,7 +153,12 @@ export const otpService = {
 
     if (existing && existing.length > 0) {
       const user = existing[0];
-      const patch: any = { updated_at: new Date().toISOString(), last_login_at: new Date().toISOString() };
+      const patch: any = { updated_at: new Date().toISOString() };
+      // `users.last_login_at` arrives in delta 005 — never let a missing
+      // timestamp column roll back the name/phone refresh below.
+      if (await hasColumn('users', 'last_login_at')) {
+        patch.last_login_at = new Date().toISOString();
+      }
       if (name && !user.first_name) {
         const [firstName, ...rest] = name.trim().split(/\s+/);
         patch.first_name = firstName || user.first_name;
@@ -151,18 +174,22 @@ export const otpService = {
     const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
     const [firstName, ...rest] = (name || '').trim().split(/\s+/);
 
+    const insertData: any = {
+      email: placeholderEmail,
+      password_hash: passwordHash,
+      first_name: firstName || null,
+      last_name: rest.length ? rest.join(' ') : null,
+      phone,
+      role: 'customer',
+      active: true,
+    };
+    if (await hasColumn('users', 'last_login_at')) {
+      insertData.last_login_at = new Date().toISOString();
+    }
+
     const { data: created, error } = await supabase
       .from('users')
-      .insert({
-        email: placeholderEmail,
-        password_hash: passwordHash,
-        first_name: firstName || null,
-        last_name: rest.length ? rest.join(' ') : null,
-        phone,
-        role: 'customer',
-        active: true,
-        last_login_at: new Date().toISOString(),
-      })
+      .insert(insertData)
       .select('*')
       .single();
 

@@ -67,6 +67,7 @@ export interface Review {
   reply?: string
   status: ReviewStatus
   createdAt: string
+  isFeatured?: boolean
 }
 
 // ===== Coupon =====

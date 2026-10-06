@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, Search, ShieldAlert, Trash2, Eye, RefreshCw, Download } from 'lucide-react'
+import { Users, Search, ShieldAlert, Trash2, Eye, RefreshCw, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { customerService } from '../../services/customerService'
 import { Customer } from '../../types'
 import { formatCurrency, formatDate } from '@meruveda/shared'
@@ -8,9 +8,15 @@ import { StatusBadge } from '../../components/ui/StatusBadge'
 import { ConfirmDialog } from '../../components/ui/Modal'
 import toast from 'react-hot-toast'
 
+const PAGE_SIZE = 10
+
 export const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isExporting, setIsExporting] = useState(false)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [page, setPage] = useState(1)
 
   // Search & Filters
   const [search, setSearch] = useState('')
@@ -22,8 +28,14 @@ export const CustomersPage: React.FC = () => {
   const fetchCustomers = async () => {
     setIsLoading(true)
     try {
-      const data = await customerService.getCustomers({ search })
-      setCustomers(data)
+      const result = await customerService.getCustomersPage({
+        page,
+        limit: PAGE_SIZE,
+        search: search.trim() || undefined,
+      })
+      setCustomers(result.items)
+      setTotal(result.total)
+      setTotalPages(Math.max(1, result.totalPages))
     } catch (err) {
       toast.error('Failed to load customers')
     } finally {
@@ -33,6 +45,10 @@ export const CustomersPage: React.FC = () => {
 
   useEffect(() => {
     fetchCustomers()
+  }, [page, search])
+
+  useEffect(() => {
+    setPage(1)
   }, [search])
 
   const handleBlockToggle = async () => {
@@ -61,53 +77,54 @@ export const CustomersPage: React.FC = () => {
     }
   }
 
-  const csvCell = (value: unknown) => {
-    const raw = value === null || value === undefined ? '' : String(value)
-    return `"${raw.replace(/"/g, '""')}"`
-  }
+  /**
+   * Downloads every customer (all pages, honouring the active search) as a
+   * real Excel workbook. `xlsx` is imported lazily so it never weighs down the
+   * initial admin bundle.
+   */
+  const handleExport = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const all = await customerService.getAllCustomers(search.trim() || undefined)
+      if (all.length === 0) {
+        toast.error('There are no customers to export')
+        return
+      }
 
-  const handleExport = () => {
-    if (customers.length === 0) {
-      toast.error('There are no customers to export')
-      return
-    }
+      const XLSX = await import('xlsx')
+      const rows = all.map((c) => ({
+        Name: c.name,
+        Email: c.email,
+        Phone: c.phone || '',
+        'Orders Count': c.totalOrders,
+        'Lifetime Spend (INR)': c.lifetimeSpend,
+        'Last Activity': c.lastLogin ? formatDate(c.lastLogin) : '',
+        'Joined On': c.createdAt ? formatDate(c.createdAt) : '',
+        Status: c.isBlocked ? 'Blocked' : 'Active',
+      }))
 
-    const header = [
-      'Name',
-      'Email',
-      'Phone',
-      'Orders Count',
-      'Lifetime Spend (INR)',
-      'Last Activity',
-      'Status',
-    ]
-
-    const rows = customers.map((c) =>
-      [
-        c.name,
-        c.email,
-        c.phone || '',
-        c.totalOrders,
-        c.lifetimeSpend,
-        c.lastLogin ? formatDate(c.lastLogin) : '',
-        c.isBlocked ? 'Blocked' : 'Active',
+      const worksheet = XLSX.utils.json_to_sheet(rows)
+      worksheet['!cols'] = [
+        { wch: 24 },
+        { wch: 30 },
+        { wch: 16 },
+        { wch: 13 },
+        { wch: 20 },
+        { wch: 18 },
+        { wch: 14 },
+        { wch: 10 },
       ]
-        .map(csvCell)
-        .join(',')
-    )
-
-    // BOM keeps Excel (Windows) reading UTF-8 correctly.
-    const csv = [header.map(csvCell).join(','), ...rows].join('\r\n')
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `meruveda-customers-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-    toast.success(`Exported ${customers.length} customers`)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Customers')
+      XLSX.writeFile(workbook, `meruveda-customers-${new Date().toISOString().slice(0, 10)}.xlsx`)
+      toast.success(`Exported ${all.length} customers to Excel`)
+    } catch (err) {
+      console.error('Customer Excel export failed', err)
+      toast.error('Failed to export customers')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -133,11 +150,11 @@ export const CustomersPage: React.FC = () => {
         <button
           type="button"
           onClick={handleExport}
-          disabled={isLoading}
+          disabled={isLoading || isExporting}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
         >
-          <Download className="h-4 w-4" />
-          Export CSV / Excel
+          {isExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {isExporting ? 'Preparing…' : 'Download Excel (.xlsx)'}
         </button>
       </div>
 
@@ -226,6 +243,36 @@ export const CustomersPage: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {total > 0 && (
+        <div className="flex items-center justify-between px-1 text-xs">
+          <span className="text-slate-500">
+            {total} customer{total === 1 ? '' : 's'} · showing {customers.length} on page {page}
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1 || isLoading}
+              className="p-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-500"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages || isLoading}
+              className="p-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-500"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Confirm Deletion */}
       <ConfirmDialog

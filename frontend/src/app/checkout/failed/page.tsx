@@ -62,14 +62,14 @@ function CheckoutFailedContent() {
             </div>
           </button>
 
-          {/* Return to Cart */}
+          {/* Back to Checkout — there is no cart page anymore; the cart is edited in place on checkout */}
           <Link
-            href="/cart"
+            href="/checkout"
             className="w-full border-2 border-gray-200 text-gray-700 hover:border-gold hover:text-gold px-6 py-4 rounded-2xl font-bold transition-all text-sm flex items-center justify-center gap-3"
           >
             <ShoppingBag size={18} />
             <div className="text-left">
-              <div>View Cart & Try Again</div>
+              <div>Back to Checkout</div>
               <div className="font-normal text-xs text-gray-400">Your items are still saved in your cart</div>
             </div>
           </Link>

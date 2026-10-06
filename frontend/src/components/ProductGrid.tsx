@@ -22,7 +22,8 @@ export default function ProductGrid({ products }: { products: any[] }) {
     );
   };
 
-  // Buy Now: add qty 1 (never increment an existing line), then go straight to the cart.
+  // Buy Now: add qty 1 (never increment an existing line), then go straight
+  // to checkout — the cart page no longer exists.
   const handleBuyNow = async (product: { id: string; name: string; price: number; img: string; gst?: number }) => {
     try {
       const alreadyInCart = cart.some((item) => item.id === product.id);
@@ -34,7 +35,7 @@ export default function ProductGrid({ products }: { products: any[] }) {
         );
       }
     } finally {
-      router.push("/cart");
+      router.push("/checkout");
     }
   };
 

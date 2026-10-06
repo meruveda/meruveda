@@ -47,7 +47,6 @@ export default function Header() {
       <nav className="hidden md:flex items-center gap-8 text-[15px] font-medium text-bg-ivory/80">
         <Link href="/" className="hover:text-gold-antique transition-colors">Home</Link>
         <Link href="/products" className="hover:text-gold-antique transition-colors">Shop</Link>
-        <Link href="/track" className="hover:text-gold-antique transition-colors">Track Order</Link>
         <Link href="/about" className="hover:text-gold-antique transition-colors">About Us</Link>
         <Link href="/blog" className="hover:text-gold-antique transition-colors">Journal</Link>
         <Link href="/contact" className="hover:text-gold-antique transition-colors">Contact</Link>
@@ -63,9 +62,9 @@ export default function Header() {
           Shop Now
         </Link>
 
-        {/* Cart */}
+        {/* Cart — opens checkout directly (there is no separate cart page) */}
         <Link
-          href="/cart"
+          href="/checkout"
           className="flex items-center gap-2 text-bg-ivory hover:text-gold-antique transition-colors"
         >
           <ShoppingCart size={20} strokeWidth={1.5} />
@@ -175,13 +174,6 @@ export default function Header() {
               className="hover:text-gold-antique transition-colors pb-2 border-b border-gold/10"
             >
               Shop
-            </Link>
-            <Link
-              href="/track"
-              onClick={() => setMobileMenuOpen(false)}
-              className="hover:text-gold-antique transition-colors pb-2 border-b border-gold/10"
-            >
-              Track Order
             </Link>
             <Link
               href="/about"

@@ -74,12 +74,17 @@ export const SIDEBAR_GROUPS: SidebarGroup[] = [
     title: 'Reports',
     items: [
       { label: 'Transactions', href: ROUTES.TRANSACTIONS, icon: CreditCard },
+      { label: 'Analytics',    href: ROUTES.ANALYTICS,    icon: BarChart3 },
     ],
   },
   {
     title: 'Operations',
     items: [
-      { label: 'User Accounts',  href: ROUTES.ADMINS,       icon: Users },
+      { label: 'User Accounts',  href: ROUTES.ADMINS,        icon: Users },
+      { label: 'Notifications',  href: ROUTES.NOTIFICATIONS, icon: Bell },
+      { label: 'Support',        href: ROUTES.SUPPORT,       icon: HeadphonesIcon },
+      { label: 'Activity Log',   href: ROUTES.ACTIVITY,      icon: Activity },
+      { label: 'Settings',       href: ROUTES.SETTINGS,      icon: Settings },
     ],
   },
   {

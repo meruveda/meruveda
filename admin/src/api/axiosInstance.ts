@@ -33,7 +33,9 @@ axiosInstance.interceptors.response.use(
       if (!isAuthRequest) {
         localStorage.removeItem('admin_token')
         localStorage.removeItem('admin_user')
-        window.location.href = '/login'
+        // The admin app is served under /admin (see BrowserRouter basename and
+        // the Vite base) — a bare /login would send users to the storefront.
+        window.location.href = '/admin/login'
         // Return a pending promise to prevent unhandled rejection/errors during redirect
         return new Promise(() => {})
       }

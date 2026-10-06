@@ -1,19 +1,66 @@
 import { apiClient } from '../api/apiClient';
+import axiosInstance from '../api/axiosInstance';
 import { Customer, PaginationParams, PaginatedResponse } from '../types';
+
+/** Maps a raw `users` row (+ computed metrics) onto the admin `Customer` shape. */
+const mapCustomer = (c: any): Customer => ({
+  ...c,
+  name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || 'Unknown',
+  totalOrders: c.totalOrders || 0,
+  lifetimeSpend: c.lifetimeSpend || 0,
+  isActive: c.active !== false,
+  isBlocked: c.active === false,
+  createdAt: c.createdAt || c.created_at,
+});
 
 class CustomerService {
   async getCustomers(params?: PaginationParams & { search?: string }): Promise<Customer[]> {
     const response = await apiClient.get('/customers', { params });
     const rawData = Array.isArray(response) ? response : (response?.data || []);
-    return rawData.map((c: any) => ({
-      ...c,
-      name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || 'Unknown',
-      totalOrders: c.totalOrders || 0,
-      lifetimeSpend: c.lifetimeSpend || 0,
-      isActive: c.active !== false,
-      isBlocked: c.active === false,
-      createdAt: c.createdAt || c.created_at
-    }));
+    return rawData.map(mapCustomer);
+  }
+
+  /**
+   * Paginated fetch that keeps the `total` / `totalPages` envelope which
+   * `apiClient` (and therefore the old list view) used to throw away.
+   */
+  async getCustomersPage(
+    params?: PaginationParams & { search?: string }
+  ): Promise<{ items: Customer[]; total: number; totalPages: number }> {
+    const response = await axiosInstance.get('/customers', {
+      params: { page: 1, limit: 10, ...params },
+    });
+    const body = response.data || {};
+    return {
+      items: (body.data || []).map(mapCustomer),
+      total: body.total || 0,
+      totalPages: body.totalPages || 0,
+    };
+  }
+
+  /**
+   * Walks every page of the customer directory — used by the Excel download so
+   * an export is never silently capped at the first page of results.
+   */
+  async getAllCustomers(search?: string): Promise<Customer[]> {
+    const limit = 200;
+    const all: Customer[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+      const response = await axiosInstance.get('/customers', {
+        params: { page, limit, ...(search ? { search } : {}) },
+      });
+      const body = response.data || {};
+      const rows = body.data || [];
+      all.push(...rows.map(mapCustomer));
+      totalPages = body.totalPages || 1;
+      page += 1;
+      if (rows.length === 0) break;
+    } while (page <= totalPages);
+
+    return all;
   }
 
   async getCustomerById(id: string): Promise<Customer> {

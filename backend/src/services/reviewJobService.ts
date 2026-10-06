@@ -1,5 +1,6 @@
 import { config } from '../config/env';
 import { supabase } from '../database/supabase';
+import { hasColumn, hasTable } from './schemaGuard';
 import { WHATSAPP_TEMPLATES, sendOnce, normalizePhone } from './whatsappService';
 
 const REVIEW_DELAY_DAYS = 7;
@@ -15,6 +16,22 @@ export const reviewJobService = {
   delayDays: REVIEW_DELAY_DAYS,
 
   async process(): Promise<{ scanned: number; sent: number; skipped: number; failed: number }> {
+    // The job depends on delta 005 (`review_requests`) and delta 006
+    // (`orders.delivered_at`). Neither can be created by the app itself, so the
+    // scheduled run reports a clean no-op until they are applied.
+    const [hasDeliveryDate, hasClaimsTable] = await Promise.all([
+      hasColumn('orders', 'delivered_at'),
+      hasTable('review_requests'),
+    ]);
+    if (!hasDeliveryDate || !hasClaimsTable) {
+      console.warn(
+        '[ReviewJob] Skipped — pending migrations:' +
+          `${hasDeliveryDate ? '' : ' orders.delivered_at (deltas/006)'}` +
+          `${hasClaimsTable ? '' : ' review_requests (deltas/005)'}`
+      );
+      return { scanned: 0, sent: 0, skipped: 0, failed: 0 };
+    }
+
     const cutoff = new Date(Date.now() - REVIEW_DELAY_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: orders, error } = await supabase

@@ -3,6 +3,9 @@ import { orderService } from '../services/orderService';
 import { orderNotifyService } from '../services/orderNotifyService';
 import { supabase } from '../database/supabase';
 import { normalizePhone } from '../services/whatsappService';
+import { hasColumn } from '../services/schemaGuard';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const getOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -55,10 +58,26 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
       return res.status(400).json({ error: { message: 'Order number and mobile number are required.' } });
     }
 
+    // `orders.delivered_at` lands in delta 006 — skip it while that is pending so
+    // the whole lookup still succeeds and the date simply comes back null.
+    const deliveredColumn = (await hasColumn('orders', 'delivered_at')) ? 'delivered_at, ' : '';
+
+    // A non-UUID reference inside `id.eq.<value>` makes PostgREST reject the whole
+    // filter ("invalid input syntax for type uuid"), which would 500 every lookup
+    // by plain order number. Only add the id branch when the value really is one,
+    // and drop characters that would break the or() expression.
+    const safeRef = orderRef.replace(/[^A-Za-z0-9_-]/g, '');
+    if (!safeRef) {
+      return res.status(400).json({ error: { message: 'Order number and mobile number are required.' } });
+    }
+    const lookupFilter = UUID_PATTERN.test(safeRef)
+      ? `order_number.eq.${safeRef},id.eq.${safeRef}`
+      : `order_number.eq.${safeRef}`;
+
     const { data, error } = await supabase
       .from('orders')
-      .select('id, order_number, status, payment_status, created_at, delivered_at, awb_code, courier_name, tracking_url, tracking_status, estimated_delivery, last_tracking_update, shipping_address, order_tracking_history(*)')
-      .or(`order_number.eq.${orderRef},id.eq.${orderRef}`)
+      .select(`id, order_number, status, payment_status, created_at, ${deliveredColumn}awb_code, courier_name, tracking_url, tracking_status, estimated_delivery, last_tracking_update, shipping_address, order_tracking_history(*)`)
+      .or(lookupFilter)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -82,7 +101,7 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
         status: order.status,
         payment_status: order.payment_status,
         created_at: order.created_at,
-        delivered_at: order.delivered_at,
+        delivered_at: order.delivered_at ?? null,
         awb_code: order.awb_code,
         courier_name: order.courier_name,
         tracking_url: order.tracking_url,

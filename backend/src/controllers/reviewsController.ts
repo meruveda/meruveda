@@ -1,5 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabase } from '../database/supabase';
+import { hasColumn } from '../services/schemaGuard';
+
+const MIGRATION_HINT =
+  'This action needs database delta 006 (backend/database/deltas/006_missing_columns.sql). Apply it in the Supabase SQL editor and retry.';
 
 export const getReviews = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -59,6 +63,10 @@ export const featureReview = async (req: Request, res: Response, next: NextFunct
     const { id } = req.params;
     const { featured } = req.body;
 
+    if (!(await hasColumn('reviews', 'is_featured'))) {
+      return res.status(503).json({ error: { message: MIGRATION_HINT } });
+    }
+
     const { data, error } = await supabase
       .from('reviews')
       .update({ is_featured: featured })
@@ -74,11 +82,17 @@ export const featureReview = async (req: Request, res: Response, next: NextFunct
 
 export const getFeaturedReviews = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { data, error } = await supabase
+    // `reviews.is_featured` lands in delta 006. Until then fall back to the
+    // newest approved reviews so the homepage testimonials are never empty.
+    const featuredAvailable = await hasColumn('reviews', 'is_featured');
+
+    let query = supabase
       .from('reviews')
       .select('*, users(first_name, last_name)')
-      .eq('status', 'approved')
-      .eq('is_featured', true)
+      .eq('status', 'approved');
+    if (featuredAvailable) query = query.eq('is_featured', true);
+
+    const { data, error } = await query
       .order('created_at', { ascending: false })
       .limit(6);
 
@@ -98,6 +112,10 @@ export const updateReview = async (req: Request, res: Response, next: NextFuncti
     if (comment !== undefined) updateData.comment = comment;
     if (reply !== undefined) updateData.reply = reply;
     if (status !== undefined) updateData.status = status;
+
+    if (reply !== undefined && !(await hasColumn('reviews', 'reply'))) {
+      return res.status(503).json({ error: { message: MIGRATION_HINT } });
+    }
 
     const { data, error } = await supabase.from('reviews').update(updateData).eq('id', id).select().single();
     if (error) throw error;

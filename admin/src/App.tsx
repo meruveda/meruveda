@@ -108,6 +108,10 @@ export const App: React.FC = () => {
 
                   {/* Operations & Administration */}
                   <Route path={ROUTES.ADMINS} element={<UsersPage />} />
+                  <Route path={ROUTES.NOTIFICATIONS} element={<NotificationsPage />} />
+                  <Route path={ROUTES.SUPPORT} element={<SupportPage />} />
+                  <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
+                  <Route path={ROUTES.ACTIVITY} element={<ActivityLogsPage />} />
 
                   {/* Wildcard Fallback */}
                   <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />

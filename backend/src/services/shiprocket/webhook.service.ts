@@ -1,5 +1,6 @@
 import { supabase } from '../../database/supabase';
 import { orderNotifyService } from '../orderNotifyService';
+import { hasColumn } from '../schemaGuard';
 
 export const shiprocketWebhookService = {
   /**
@@ -135,7 +136,11 @@ export const shiprocketWebhookService = {
         if (etd) updateData.estimated_delivery = etd;
         if (payload.tracking_url) updateData.tracking_url = payload.tracking_url;
         if (normalizedStatus === 'DELIVERED') {
-          updateData.delivered_at = eventTimestampStr;
+          // `orders.delivered_at` arrives in delta 006 — only write it when the
+          // column exists, otherwise the whole status update would be rejected.
+          if (await hasColumn('orders', 'delivered_at')) {
+            updateData.delivered_at = eventTimestampStr;
+          }
           
           // Auto-confirm COD payment
           const isCOD = order.payment_method === 'Cash On Delivery' || String(order.payment_method).toUpperCase() === 'COD';

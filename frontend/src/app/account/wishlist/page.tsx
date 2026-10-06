@@ -25,7 +25,8 @@ export default function WishlistPage() {
     removeFromWishlist(item.id);
   };
 
-  // Buy Now: add qty 1 (never increment an existing line), then go straight to the cart.
+  // Buy Now: add qty 1 (never increment an existing line), then go straight
+  // to checkout — the cart page no longer exists.
   const handleBuyNow = async (item: WishlistItem) => {
     try {
       const alreadyInCart = cart.some((entry) => entry.id === item.id);
@@ -38,7 +39,7 @@ export default function WishlistPage() {
         });
       }
     } finally {
-      router.push("/cart");
+      router.push("/checkout");
     }
   };
 
