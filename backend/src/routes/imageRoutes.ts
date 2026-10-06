@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import sharp from 'sharp';
 
@@ -17,7 +18,14 @@ import sharp from 'sharp';
  */
 const router = Router();
 
-const CACHE_DIR = path.join(process.cwd(), '.cache', 'images');
+const IS_SERVERLESS =
+  Boolean(process.env.VERCEL) || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+// Vercel's serverless filesystem is read-only except /tmp — writing the disk
+// cache under process.cwd() threw EROFS there, so every product photo 500'd in
+// production while local dev (writable disk) kept working.
+const CACHE_DIR = IS_SERVERLESS
+  ? path.join(os.tmpdir(), 'meruveda-images')
+  : path.join(process.cwd(), '.cache', 'images');
 const FETCH_TIMEOUT_MS = 60_000;
 const MAX_SOURCE_BYTES = 30 * 1024 * 1024;
 
@@ -37,8 +45,37 @@ function isAllowedSource(rawUrl: string): boolean {
     return false;
   }
   if (parsed.protocol !== 'https:') return false;
-  if (!supabaseHost) return false;
+  // When SUPABASE_URL is unset (e.g. missing env on the deployed backend),
+  // previously *every* image was rejected with 400 while local dev worked.
+  // Fall back to allowing the Supabase storage domains so photos still load.
+  if (!supabaseHost) {
+    return (
+      parsed.hostname.endsWith('.supabase.co') ||
+      parsed.hostname.endsWith('.supabase.in')
+    );
+  }
   return parsed.hostname === supabaseHost || parsed.hostname.endsWith('.supabase.co');
+}
+
+function readCachedFile(file: string): Buffer | null {
+  try {
+    if (fs.existsSync(file)) return fs.readFileSync(file);
+  } catch {
+    // Ephemeral /tmp may be wiped between invocations — treat as cache miss.
+  }
+  return null;
+}
+
+function tryWriteCache(file: string, buffer: Buffer): void {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, buffer);
+    fs.renameSync(tmp, file);
+  } catch (err: any) {
+    // Disk cache is best-effort on serverless — never fail the request for it.
+    console.warn('[Images] cache write skipped:', err?.message || err);
+  }
 }
 
 function clamp(value: string | undefined, min: number, max: number, fallback: number): number {
@@ -65,18 +102,18 @@ router.get('/fetch', async (req: Request, res: Response) => {
     const derivativeKey = crypto.createHash('sha1').update(`${source}|${width}|${quality}`).digest('hex');
     const derivativeFile = path.join(CACHE_DIR, `${derivativeKey}.webp`);
 
-    fs.mkdirSync(CACHE_DIR, { recursive: true });
-
     res.setHeader('Content-Type', 'image/webp');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    if (fs.existsSync(derivativeFile)) {
-      return fs.createReadStream(derivativeFile).pipe(res);
+    const cachedDerivative = readCachedFile(derivativeFile);
+    if (cachedDerivative) {
+      return res.send(cachedDerivative);
     }
 
-    if (!fs.existsSync(sourceFile)) {
+    let sourceBuffer = readCachedFile(sourceFile);
+    if (!sourceBuffer) {
       const upstream = await fetch(source, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         redirect: 'follow',
@@ -95,20 +132,17 @@ router.get('/fetch', async (req: Request, res: Response) => {
         return res.status(502).json({ error: { message: 'Image too large.' } });
       }
 
-      const tmpSource = `${sourceFile}.${process.pid}.tmp`;
-      fs.writeFileSync(tmpSource, buffer);
-      fs.renameSync(tmpSource, sourceFile);
+      sourceBuffer = buffer;
+      tryWriteCache(sourceFile, buffer);
     }
 
-    const output = await sharp(fs.readFileSync(sourceFile))
+    const output = await sharp(sourceBuffer)
       .rotate()
       .resize({ width, withoutEnlargement: true })
       .webp({ quality })
       .toBuffer();
 
-    const tmpDerivative = `${derivativeFile}.${process.pid}.tmp`;
-    fs.writeFileSync(tmpDerivative, output);
-    fs.renameSync(tmpDerivative, derivativeFile);
+    tryWriteCache(derivativeFile, output);
 
     return res.send(output);
   } catch (error: any) {
