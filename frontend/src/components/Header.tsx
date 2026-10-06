@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ShoppingCart, User, ChevronDown, Package, Heart, Settings, LogOut, Menu, X } from "lucide-react";
+import { ShoppingCart, User, ChevronDown, Package, RotateCcw, Star, MessageSquare, Heart, Settings, LogOut, Menu, X } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useRef, useEffect } from "react";
@@ -71,7 +71,7 @@ export default function Header() {
           <span className="text-sm font-medium font-ibm-plex-mono">{cartCount}</span>
         </Link>
 
-        {/* Auth Area */}
+        {/* Auth Area — always visible right next to the cart */}
         {isAuthenticated && user ? (
           <div className="relative" ref={dropdownRef}>
             <button
@@ -104,7 +104,7 @@ export default function Header() {
                   <p className="text-xs text-gray-500 truncate">{user.email}</p>
                 </div>
                 <Link
-                  href="/account"
+                  href="/profile"
                   onClick={() => setDropdownOpen(false)}
                   className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
                 >
@@ -116,6 +116,27 @@ export default function Header() {
                   className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
                 >
                   <Package size={15} /> My Orders
+                </Link>
+                <Link
+                  href="/account/returns"
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
+                >
+                  <RotateCcw size={15} /> Returns
+                </Link>
+                <Link
+                  href="/account/reviews"
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
+                >
+                  <Star size={15} /> My Reviews
+                </Link>
+                <Link
+                  href="/account/support"
+                  onClick={() => setDropdownOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
+                >
+                  <MessageSquare size={15} /> Help & Support
                 </Link>
                 {user.role === 'admin' ? (
                   <a
@@ -145,7 +166,18 @@ export default function Header() {
               </div>
             )}
           </div>
-        ) : null}
+        ) : (
+          /* Guest — profile icon sits next to cart; /profile shows the
+             inline login gate when logged out, then shows the profile. */
+          <Link
+            href="/profile"
+            aria-label="My Profile"
+            title="My Profile"
+            className="flex items-center text-bg-ivory hover:text-gold-antique transition-colors"
+          >
+            <User size={20} strokeWidth={1.5} />
+          </Link>
+        )}
 
         {/* Mobile Menu Toggle Button */}
         <button
@@ -195,6 +227,20 @@ export default function Header() {
               className="hover:text-gold-antique transition-colors pb-2 border-b border-gold/10"
             >
               Contact
+            </Link>
+            <Link
+              href="/profile"
+              onClick={() => setMobileMenuOpen(false)}
+              className="hover:text-gold-antique transition-colors pb-2 border-b border-gold/10"
+            >
+              My Profile
+            </Link>
+            <Link
+              href="/account/orders"
+              onClick={() => setMobileMenuOpen(false)}
+              className="hover:text-gold-antique transition-colors pb-2 border-b border-gold/10"
+            >
+              My Orders
             </Link>
           </nav>
         </div>

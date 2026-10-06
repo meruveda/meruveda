@@ -60,9 +60,11 @@ export default function CheckoutSuccessPage({ params }: { params: Promise<{ orde
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace("/login");
+      // Order-success links need a session: go through the profile login
+      // gate, which returns here (?next=) after verification.
+      router.replace(`/profile?next=${encodeURIComponent(`/checkout/success/${orderId}`)}`);
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user, router, orderId]);
 
   useEffect(() => {
     const fetchOrder = async () => {

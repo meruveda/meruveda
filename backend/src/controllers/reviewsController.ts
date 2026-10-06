@@ -22,6 +22,25 @@ export const getReviews = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+/** Authenticated customer's own feedback history (profile page). */
+export const getMyReviews = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: { message: 'Unauthorized' } });
+    }
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*, products(id, name)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ data: data || [] });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createReview = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;

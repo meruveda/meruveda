@@ -1,113 +1,90 @@
 "use client";
 
-import { useAuth } from "@/context/AuthContext";
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { orderService, returnService, reviewService } from "@/services/accountService";
+import type { AccountOrder } from "@/types/account";
+import { DashboardCards, ProfileHeaderCard, QuickLinks, RecentOrders, type OverviewData } from "@/components/account/Overview";
+import { EditProfileModal } from "@/components/account/EditProfileModal";
+import { ErrorBox, SectionHeader, SkeletonCard } from "@/components/account/ui";
 
-export default function ProfilePage() {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [formData, setFormData] = useState({
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || "",
-    email: user?.email || "",
-    phone: user?.phone || "+91 98765 43210",
-  });
+export default function AccountOverviewPage() {
+  const [editOpen, setEditOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<OverviewData>({ orders: [], returns: [], reviewCount: 0, pendingReviews: 0 });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const load = useCallback(async () => {
     setLoading(true);
-    setSuccess(false);
+    setError(null);
+    try {
+      const [orders, myReviews] = await Promise.all([
+        orderService.myOrders().catch(() => [] as AccountOrder[]),
+        reviewService.mine().catch(() => []),
+      ]);
+      const localReturns = returnService.list();
+      const deliveredItems = new Set<string>();
+      for (const o of orders) {
+        if (o.normalizedStatus !== "delivered") continue;
+        for (const it of o.items) deliveredItems.add(it.productId);
+      }
+      const reviewedIds = new Set(myReviews.map((r) => r.productId));
+      let pending = 0;
+      deliveredItems.forEach((id) => {
+        if (!reviewedIds.has(id)) pending += 1;
+      });
+      setData({ orders, returns: localReturns, reviewCount: myReviews.length, pendingReviews: pending });
+    } catch (e) {
+      setError((e as Error)?.message || "Could not load your dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    // Simulate API update
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setLoading(false);
-    setSuccess(true);
-
-    // Clear success message after 3 seconds
-    setTimeout(() => setSuccess(false), 3000);
-  };
-
-  const inputClass =
-    "w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-gold focus:ring-1 focus:ring-gold/30 transition-all text-sm";
-  const labelClass = "block text-gray-700 font-medium mb-1.5 text-sm";
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
-    <div>
-      <h1 className="text-3xl font-playfair font-bold text-deep-purple mb-2">My Profile</h1>
-      <p className="text-gray-500 text-sm mb-8">Manage your personal information and account details.</p>
+    <div className="space-y-5">
+      <SectionHeader
+        title="My Account"
+        subtitle="Orders, returns, reviews and settings — everything in one place."
+        action={
+          <Link href="/account/track" className="text-xs font-bold text-gold hover:underline whitespace-nowrap">
+            Track a package →
+          </Link>
+        }
+      />
 
-      {success && (
-        <div className="mb-6 p-4 bg-green-50 text-green-700 text-sm rounded-xl border border-green-100 font-medium">
-          Profile updated successfully! (Mocked)
+      <ProfileHeaderCard onEdit={() => setEditOpen(true)} />
+
+      {error && <ErrorBox message={error} onRetry={load} />}
+
+      {loading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <SkeletonCard key={i} lines={2} />
+          ))}
         </div>
+      ) : (
+        <DashboardCards data={data} loading={false} />
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className={labelClass}>First Name</label>
-            <input
-              type="text"
-              name="firstName"
-              value={formData.firstName}
-              onChange={handleChange}
-              required
-              className={inputClass}
-            />
+      <div className="bg-ivory/40 border border-gray-100 rounded-2xl p-5 md:p-6">
+        <h3 className="font-playfair font-bold text-deep-purple text-lg mb-4">Recent orders</h3>
+        {loading ? (
+          <div className="space-y-3">
+            <SkeletonCard lines={2} />
           </div>
-          <div>
-            <label className={labelClass}>Last Name</label>
-            <input
-              type="text"
-              name="lastName"
-              value={formData.lastName}
-              onChange={handleChange}
-              required
-              className={inputClass}
-            />
-          </div>
-        </div>
+        ) : (
+          <RecentOrders orders={data.orders} loading={false} />
+        )}
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className={labelClass}>Email Address</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              disabled
-              className={`${inputClass} bg-gray-50 cursor-not-allowed text-gray-400`}
-            />
-            <span className="text-xs text-gray-400 mt-1 block">Email address cannot be changed.</span>
-          </div>
-          <div>
-            <label className={labelClass}>Phone Number</label>
-            <input
-              type="text"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-              required
-              className={inputClass}
-            />
-          </div>
-        </div>
+      <QuickLinks />
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-deep-purple text-white px-8 py-3 rounded-lg font-bold hover:bg-deep-purple/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {loading && <Loader2 size={16} className="animate-spin" />}
-          {loading ? "Updating..." : "Save Changes"}
-        </button>
-      </form>
+      <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} />
     </div>
   );
 }

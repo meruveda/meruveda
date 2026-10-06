@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getReviews, createReview, updateReviewStatus, deleteReview, featureReview, getFeaturedReviews, updateReview } from '../controllers/reviewsController';
+import { getReviews, getMyReviews, createReview, updateReviewStatus, deleteReview, featureReview, getFeaturedReviews, updateReview } from '../controllers/reviewsController';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 
 const router = Router();
@@ -8,6 +8,7 @@ router.get('/', getReviews as any);
 router.get('/featured', getFeaturedReviews as any); // Public - for homepage display
 
 router.use(requireAuth as any);
+router.get('/my', getMyReviews as any); // Customer feedback history (must stay before admin-only block)
 router.post('/', createReview as any); // Customers can post
 
 router.use(requireAdmin as any);

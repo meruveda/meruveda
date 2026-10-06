@@ -313,7 +313,7 @@ function writeStoredAddresses(list: Address[]) {
 }
 
 export default function CheckoutPage() {
-  const { cart, cartTotal } = useCart();
+  const { cart, cartTotal, removeFromCart, updateQuantity } = useCart();
   const { user, isLoading, sendOtp, resendOtp, verifyOtp, saveProfile } = useAuth();
   const router = useRouter();
 
@@ -356,6 +356,18 @@ export default function CheckoutPage() {
   const [orderNotes, setOrderNotes] = useState("");
 
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+
+  // Tracks which cart line is being removed so only that row shows a spinner.
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const handleRemoveItem = async (id: string) => {
+    setRemovingId(id);
+    try {
+      await removeFromCart(id);
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
   const shippingCharges = cartTotal >= 1000 ? 0 : 50;
   const [isServiceable, setIsServiceable] = useState(true);
@@ -1541,18 +1553,58 @@ export default function CheckoutPage() {
 
             {/* Cart Items List */}
             <div className="max-h-60 overflow-y-auto space-y-3 mb-6 pr-1">
-              {cart.map((item) => (
-                <div key={item.id} className="flex gap-3 text-xs">
-                  <div className="w-12 h-12 bg-ivory rounded-lg overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center font-bold text-gold">
-                    {item.name ? item.name.substring(0, 2).toUpperCase() : 'MV'}
+              {cart.map((item) => {
+                const qty = item.quantity || 1;
+                const isRemoving = removingId === item.id;
+                return (
+                  <div key={item.id} className="flex gap-3 text-xs">
+                    <div className="w-12 h-12 bg-ivory rounded-lg overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center font-bold text-gold">
+                      {item.name ? item.name.substring(0, 2).toUpperCase() : 'MV'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-deep-purple truncate">{item.name}</p>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="inline-flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.id, qty - 1)}
+                            disabled={isRemoving}
+                            aria-label={`Decrease quantity of ${item.name}`}
+                            className="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40 font-bold leading-none"
+                          >
+                            −
+                          </button>
+                          <span className="px-2 font-bold text-deep-purple min-w-6 text-center" aria-live="polite">{qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.id, qty + 1)}
+                            disabled={isRemoving}
+                            aria-label={`Increase quantity of ${item.name}`}
+                            className="px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-40 font-bold leading-none"
+                          >
+                            +
+                          </button>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(item.id)}
+                          disabled={isRemoving}
+                          aria-label={`Remove ${item.name} from cart`}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-red-500 disabled:opacity-40 transition-colors"
+                        >
+                          {isRemoving ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={12} />
+                          )}
+                          {isRemoving ? "Removing…" : "Remove"}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="font-bold text-deep-purple whitespace-nowrap">₹{((item.price || 0) * qty).toFixed(2)}</p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-deep-purple truncate">{item.name}</p>
-                    <p className="text-gray-400">Qty: {item.quantity || 1}</p>
-                  </div>
-                  <p className="font-bold text-deep-purple">₹{((item.price || 0) * (item.quantity || 1)).toFixed(2)}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Coupon Code Section */}

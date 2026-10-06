@@ -1,243 +1,325 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Loader2 } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Bell, Eye, EyeOff, Loader2, Lock, LogOut, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { isValidEmail, isValidPhone } from "@/types/account";
+import { ConfirmDialog, Notice } from "@/components/account/ui";
+
+type Prefs = {
+  orderUpdates: boolean;
+  deliveryUpdates: boolean;
+  returnUpdates: boolean;
+  promo: boolean;
+  email: boolean;
+  whatsapp: boolean;
+};
+
+const DEFAULT_PREFS: Prefs = {
+  orderUpdates: true,
+  deliveryUpdates: true,
+  returnUpdates: true,
+  promo: true,
+  email: true,
+  whatsapp: true,
+};
+
+function Toggle({ on, onFlip, label, blurb }: { on: boolean; onFlip: () => void; label: string; blurb: string }) {
+  return (
+    <button
+      onClick={onFlip}
+      role="switch"
+      aria-checked={on}
+      className="w-full flex items-start gap-3 text-left py-1"
+    >
+      <span className={`relative mt-0.5 w-10 h-5.5 h-[22px] rounded-full transition-colors shrink-0 ${on ? "bg-gold" : "bg-gray-200"}`}>
+        <span className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-[3px]"}`} />
+      </span>
+      <span>
+        <span className="block text-sm font-semibold text-deep-purple">{label}</span>
+        <span className="block text-xs text-gray-500 mt-0.5">{blurb}</span>
+      </span>
+    </button>
+  );
+}
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+  const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+  const [showPw, setShowPw] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
+
+  const [contact, setContact] = useState({ email: "", phone: "" });
+  const [contactBusy, setContactBusy] = useState(false);
+
+  const [notice, setNotice] = useState<{ tone: "success" | "error" | "info"; msg: string } | null>(null);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    if (user?.role === 'admin') {
+    if (user?.role === "admin") {
       window.location.href = process.env.NEXT_PUBLIC_ADMIN_URL || "/admin";
+      return;
     }
+    if (user) {
+      setContact({ email: user.email || "", phone: user.phone || "" });
+    }
+    const load = async () => {
+      try {
+        const { default: axiosInstance } = await import("@/api/axiosInstance");
+        const res = await axiosInstance.get("/auth/preferences");
+        const d = res.data?.data || {};
+        // Merge legacy keys (smsOrder/whatsappAlerts/…) into the new schema.
+        setPrefs({
+          orderUpdates: d.orderUpdates ?? d.smsOrder ?? true,
+          deliveryUpdates: d.deliveryUpdates ?? d.whatsappAlerts ?? true,
+          returnUpdates: d.returnUpdates ?? true,
+          promo: d.promo ?? d.emailPromo ?? true,
+          email: d.email ?? d.emailNewsletter ?? d.emailPromo ?? true,
+          whatsapp: d.whatsapp ?? d.whatsappAlerts ?? true,
+        });
+      } catch {
+        /* defaults stand */
+      } finally {
+        setPrefsLoaded(true);
+      }
+    };
+    load();
   }, [user]);
 
-  if (user?.role === 'admin') {
+  if (user?.role === "admin") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-        <Loader2 size={40} className="animate-spin text-gold" />
-        <p className="text-deep-purple font-medium">Redirecting to Admin Dashboard...</p>
+      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3">
+        <Loader2 size={36} className="animate-spin text-gold" />
+        <p className="text-deep-purple font-medium text-sm">Redirecting to Admin Dashboard…</p>
       </div>
     );
   }
-  
-  // Notification states
-  const [notifications, setNotifications] = useState({
-    emailPromo: true,
-    smsOrder: true,
-    emailNewsletter: false,
-    whatsappAlerts: true,
-  });
 
-  useEffect(() => {
-    if (!user) return;
-    const fetchPrefs = async () => {
-      try {
-        const { default: axiosInstance } = await import('@/api/axiosInstance');
-        const res = await axiosInstance.get('/auth/preferences');
-        if (res.data?.data) {
-          setNotifications(res.data.data);
-        }
-      } catch (err) {
-        console.error("Failed to load preferences", err);
-      }
-    };
-    fetchPrefs();
-  }, [user]);
+  const say = (tone: "success" | "error" | "info", msg: string) => {
+    setNotice({ tone, msg });
+    setTimeout(() => setNotice(null), 4000);
+  };
 
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
-
-  const handleNotificationChange = async (key: keyof typeof notifications) => {
-    const updated = { ...notifications, [key]: !notifications[key] };
-    setNotifications(updated);
+  const flipPref = async (key: keyof Prefs) => {
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
     try {
-      const { default: axiosInstance } = await import('@/api/axiosInstance');
-      await axiosInstance.post('/auth/preferences', updated);
-    } catch (err) {
-      console.error("Failed to save preferences", err);
+      const { default: axiosInstance } = await import("@/api/axiosInstance");
+      await axiosInstance.post("/auth/preferences", {
+        ...next,
+        // legacy mirrors so older readers keep working
+        smsOrder: next.orderUpdates,
+        whatsappAlerts: next.whatsapp,
+        emailPromo: next.promo,
+        emailNewsletter: next.email,
+      });
+    } catch {
+      setPrefs(prefs);
+      say("error", "Could not save that preference.");
     }
   };
 
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPasswordForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const changePassword = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (pw.next.length < 6) return say("error", "New password must be at least 6 characters.");
+    if (pw.next !== pw.confirm) return say("error", "New passwords do not match.");
+    setPwBusy(true);
+    try {
+      const { default: axiosInstance } = await import("@/api/axiosInstance");
+      // Backend exposes reset-password by token; try a change-password route
+      // first (future-proof), then fall back to reset request email.
+      try {
+        await axiosInstance.post("/auth/change-password", { currentPassword: pw.current, newPassword: pw.next });
+        say("success", "Password changed successfully.");
+      } catch (e: unknown) {
+        const status = (e as { response?: { status?: number } })?.response?.status;
+        if (status === 404) {
+          await axiosInstance.post("/auth/forgot-password", { email: user?.email });
+          say("info", "Password change needs email verification — we just sent you a reset link.");
+        } else {
+          throw e;
+        }
+      }
+      setPw({ current: "", next: "", confirm: "" });
+    } catch (e) {
+      const err = e as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      say("error", err?.response?.data?.error?.message || err?.message || "Could not change password.");
+    } finally {
+      setPwBusy(false);
+    }
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setError("New passwords do not match.");
-      return;
+  const saveContact = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (contact.email && !isValidEmail(contact.email)) return say("error", "Enter a valid email address.");
+    if (contact.phone && !isValidPhone(contact.phone)) return say("error", "Enter a valid 10-digit mobile number.");
+    setContactBusy(true);
+    try {
+      const { default: axiosInstance } = await import("@/api/axiosInstance");
+      await axiosInstance.put("/auth/profile", {
+        email: contact.email || undefined,
+        phone: contact.phone || undefined,
+      });
+      say("success", "Contact details updated.");
+    } catch (e) {
+      const err = e as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      say("error", err?.response?.data?.error?.message || err?.message || "Could not update contact details.");
+    } finally {
+      setContactBusy(false);
     }
-
-    if (passwordForm.newPassword.length < 6) {
-      setError("Password must be at least 6 characters long.");
-      return;
-    }
-
-    setLoading(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setLoading(false);
-    setSuccess(true);
-    setPasswordForm({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    });
-
-    setTimeout(() => setSuccess(false), 3000);
   };
 
-  const inputClass =
-    "w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:border-gold focus:ring-1 focus:ring-gold/30 transition-all text-sm";
-  const labelClass = "block text-gray-700 font-medium mb-1.5 text-sm";
+  const input = "w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-gold focus:ring-1 focus:ring-gold/30 transition-all text-sm";
+  const label = "block text-gray-700 font-medium mb-1.5 text-sm";
 
   return (
-    <div className="space-y-12">
-      {/* Security Section */}
+    <div className="space-y-10">
       <div>
-        <h1 className="text-3xl font-playfair font-bold text-deep-purple mb-1">Account Settings</h1>
-        <p className="text-gray-500 text-sm mb-6">Manage security preferences and subscription notifications.</p>
+        <h1 className="text-2xl md:text-3xl font-playfair font-bold text-deep-purple mb-1">Account Settings</h1>
+        <p className="text-gray-500 text-sm">Personal info, security, notifications and privacy — all in one place.</p>
+      </div>
 
-        <hr className="border-gray-100 mb-8" />
+      {notice && <Notice tone={notice.tone}>{notice.msg}</Notice>}
 
-        <h3 className="font-playfair font-bold text-deep-purple text-xl mb-4">Security Settings</h3>
-        
-        {success && (
-          <div className="mb-6 p-4 bg-green-50 text-green-700 text-sm rounded-xl border border-green-100 font-medium">
-            Password changed successfully! (Mocked)
-          </div>
-        )}
-
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-700 text-sm rounded-xl border border-red-100 font-medium">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
+      {/* Personal information */}
+      <section aria-label="Personal information">
+        <h2 className="font-playfair font-bold text-deep-purple text-lg mb-1 flex items-center gap-2">
+          <UserRound size={18} className="text-gold" /> Personal Information
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">Name and photo live in <button onClick={() => router.push("/account")} className="font-bold text-gold hover:underline">Overview → Edit Profile</button>. Update contact details here.</p>
+        <form onSubmit={saveContact} className="grid sm:grid-cols-2 gap-4 max-w-2xl" noValidate>
           <div>
-            <label className={labelClass}>Current Password</label>
-            <input
-              type="password"
-              name="currentPassword"
-              required
-              value={passwordForm.currentPassword}
-              onChange={handlePasswordChange}
-              className={inputClass}
-              placeholder="••••••••"
-            />
+            <label className={label} htmlFor="st-email">Email address</label>
+            <input id="st-email" type="email" className={input} value={contact.email} onChange={(e) => setContact((p) => ({ ...p, email: e.target.value }))} placeholder="you@example.com" autoComplete="email" />
           </div>
-
           <div>
-            <label className={labelClass}>New Password</label>
-            <input
-              type="password"
-              name="newPassword"
-              required
-              value={passwordForm.newPassword}
-              onChange={handlePasswordChange}
-              className={inputClass}
-              placeholder="••••••••"
-            />
+            <label className={label} htmlFor="st-phone">Phone number</label>
+            <input id="st-phone" className={input} value={contact.phone} onChange={(e) => setContact((p) => ({ ...p, phone: e.target.value }))} placeholder="98765 43210" inputMode="tel" autoComplete="tel" />
           </div>
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={contactBusy} className="bg-deep-purple text-white px-6 py-2.5 rounded-lg font-bold hover:bg-deep-purple/90 text-sm disabled:opacity-50 flex items-center gap-2">
+              {contactBusy && <Loader2 size={15} className="animate-spin" />} Save Contact Details
+            </button>
+          </div>
+        </form>
+      </section>
 
+      <hr className="border-gray-100" />
+
+      {/* Security */}
+      <section aria-label="Security">
+        <h2 className="font-playfair font-bold text-deep-purple text-lg mb-1 flex items-center gap-2">
+          <Lock size={18} className="text-gold" /> Security
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">Change your password. Active sessions stay on this device; use Logout below to sign out everywhere on shared devices.</p>
+        <form onSubmit={changePassword} className="space-y-4 max-w-md" noValidate>
           <div>
-            <label className={labelClass}>Confirm New Password</label>
-            <input
-              type="password"
-              name="confirmPassword"
-              required
-              value={passwordForm.confirmPassword}
-              onChange={handlePasswordChange}
-              className={inputClass}
-              placeholder="••••••••"
-            />
+            <label className={label} htmlFor="st-cur">Current password</label>
+            <div className="relative">
+              <input id="st-cur" type={showPw ? "text" : "password"} required className={`${input} pr-11`} value={pw.current} onChange={(e) => setPw((p) => ({ ...p, current: e.target.value }))} placeholder="••••••••" autoComplete="current-password" />
+              <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-deep-purple" aria-label={showPw ? "Hide passwords" : "Show passwords"}>
+                {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-deep-purple text-white px-6 py-2.5 rounded-lg font-bold hover:bg-deep-purple/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
-          >
-            {loading && <Loader2 size={16} className="animate-spin" />}
-            {loading ? "Changing..." : "Change Password"}
+          <div>
+            <label className={label} htmlFor="st-new">New password</label>
+            <input id="st-new" type={showPw ? "text" : "password"} required minLength={6} className={input} value={pw.next} onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))} placeholder="Min. 6 characters" autoComplete="new-password" />
+          </div>
+          <div>
+            <label className={label} htmlFor="st-conf">Confirm new password</label>
+            <input id="st-conf" type={showPw ? "text" : "password"} required className={input} value={pw.confirm} onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))} placeholder="Repeat new password" autoComplete="new-password" />
+          </div>
+          <button type="submit" disabled={pwBusy} className="bg-deep-purple text-white px-6 py-2.5 rounded-lg font-bold hover:bg-deep-purple/90 text-sm disabled:opacity-50 flex items-center gap-2">
+            {pwBusy && <Loader2 size={15} className="animate-spin" />} Change Password
           </button>
         </form>
-      </div>
 
-      {/* Notifications Section */}
-      <div>
-        <h3 className="font-playfair font-bold text-deep-purple text-xl mb-4">Notification Preferences</h3>
-        <p className="text-gray-500 text-xs mb-6">Choose how you want to receive order updates, news, and promotional offers.</p>
-
-        <div className="space-y-4 max-w-xl">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={notifications.smsOrder}
-              onChange={() => handleNotificationChange("smsOrder")}
-              className="accent-gold w-4 h-4 mt-0.5"
-            />
-            <div>
-              <p className="text-sm font-semibold text-deep-purple">Order & Shipping Alerts (SMS)</p>
-              <p className="text-xs text-gray-500">Receive transactional alerts for purchases, shipping updates, and deliveries.</p>
-            </div>
-          </label>
-
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={notifications.whatsappAlerts}
-              onChange={() => handleNotificationChange("whatsappAlerts")}
-              className="accent-gold w-4 h-4 mt-0.5"
-            />
-            <div>
-              <p className="text-sm font-semibold text-deep-purple">WhatsApp Chat Alerts</p>
-              <p className="text-xs text-gray-500">Receive customer support details and shipment tracking directly on WhatsApp.</p>
-            </div>
-          </label>
-
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={notifications.emailPromo}
-              onChange={() => handleNotificationChange("emailPromo")}
-              className="accent-gold w-4 h-4 mt-0.5"
-            />
-            <div>
-              <p className="text-sm font-semibold text-deep-purple">Promotional Offers (Email)</p>
-              <p className="text-xs text-gray-500">Get notified about exclusive deals, festive offers, and discounts.</p>
-            </div>
-          </label>
-
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={notifications.emailNewsletter}
-              onChange={() => handleNotificationChange("emailNewsletter")}
-              className="accent-gold w-4 h-4 mt-0.5"
-            />
-            <div>
-              <p className="text-sm font-semibold text-deep-purple">Ayurvedic Journal Newsletter (Email)</p>
-              <p className="text-xs text-gray-500">Receive monthly digests from our Ayurvedic doctors regarding wellness advice.</p>
-            </div>
-          </label>
+        <div className="mt-5 max-w-md bg-ivory/50 border border-gray-100 rounded-xl px-4 py-3.5 text-xs text-gray-600 flex items-start gap-2.5">
+          <ShieldCheck size={16} className="text-sage shrink-0 mt-0.5" />
+          <p>Signed in as <span className="font-bold text-deep-purple">{user?.email || user?.phone || "you"}</span>. If this isn&apos;t you, change your password and log out immediately.</p>
         </div>
-      </div>
+      </section>
+
+      <hr className="border-gray-100" />
+
+      {/* Notifications */}
+      <section aria-label="Notifications">
+        <h2 className="font-playfair font-bold text-deep-purple text-lg mb-1 flex items-center gap-2">
+          <Bell size={18} className="text-gold" /> Notifications
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">Choose what we may send you, and where. Transactional order SMS can&apos;t be fully disabled for active orders.</p>
+        {!prefsLoaded ? (
+          <p className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={15} className="animate-spin" /> Loading preferences…</p>
+        ) : (
+          <div className="space-y-4 max-w-xl divide-y divide-gray-50">
+            <Toggle on={prefs.orderUpdates} onFlip={() => flipPref("orderUpdates")} label="Order updates" blurb="Placed, confirmed, shipped and delivered alerts." />
+            <Toggle on={prefs.deliveryUpdates} onFlip={() => flipPref("deliveryUpdates")} label="Delivery updates" blurb="Out-for-delivery and delay notices." />
+            <Toggle on={prefs.returnUpdates} onFlip={() => flipPref("returnUpdates")} label="Return / refund updates" blurb="Pickup slots, quality checks and refund credits." />
+            <Toggle on={prefs.promo} onFlip={() => flipPref("promo")} label="Promotional notifications" blurb="Offers, launches and festive sales." />
+            <Toggle on={prefs.email} onFlip={() => flipPref("email")} label="Email notifications" blurb="Order mail, invoices and the Ayurvedic journal." />
+            <Toggle on={prefs.whatsapp} onFlip={() => flipPref("whatsapp")} label="WhatsApp / SMS notifications" blurb="Tracking and support messages on your phone." />
+          </div>
+        )}
+      </section>
+
+      <hr className="border-gray-100" />
+
+      {/* Privacy */}
+      <section aria-label="Privacy">
+        <h2 className="font-playfair font-bold text-deep-purple text-lg mb-1 flex items-center gap-2">
+          <ShieldCheck size={18} className="text-gold" /> Privacy & Sessions
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">We only use your details for orders, support and the alerts you opted into. Only you can access this account&apos;s data.</p>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={() => setConfirmLogout(true)} className="flex items-center gap-2 px-5 py-2.5 border border-gray-200 hover:bg-gray-50 rounded-lg text-xs font-bold text-gray-700">
+            <LogOut size={14} /> Log out this device
+          </button>
+          <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-2 px-5 py-2.5 border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold">
+            <Trash2 size={14} /> Request account deletion
+          </button>
+        </div>
+      </section>
+
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        message="You will need your phone/email to sign back in."
+        confirmLabel="Log Out"
+        onConfirm={() => {
+          logout();
+          router.push("/");
+        }}
+        onClose={() => setConfirmLogout(false)}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Request account deletion?"
+        message="This sends a deletion request to our support team. Your orders needed for invoices are retained as required by law."
+        confirmLabel="Send Request"
+        onConfirm={async () => {
+          try {
+            const { default: axiosInstance } = await import("@/api/axiosInstance");
+            await axiosInstance.post("/support", {
+              subject: "[Privacy] Delete my account",
+              message: `Please delete the account for ${user?.email || user?.phone || user?.id}.`,
+              priority: "high",
+            });
+            say("info", "Deletion request sent to support. We will confirm by email/SMS.");
+          } catch {
+            say("error", "Could not send the request. Please contact support.");
+          }
+          setConfirmDelete(false);
+        }}
+        onClose={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }
