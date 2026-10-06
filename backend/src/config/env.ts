@@ -42,7 +42,9 @@ export const config = {
   // Base URL of the customer-facing frontend — used to construct absolute
   // redirect URLs for payment gateway callbacks.
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
-  googleIdentityToolkitApiKey: process.env.GOOGLE_IDENTITY_TOOLKIT_API_KEY || 'AIzaSyAyNt9896pytBGaMzzfyD91-tn5mwrev8U',
+  // No hardcoded fallback: this key used to live in source control and must be
+  // supplied via GOOGLE_IDENTITY_TOOLKIT_API_KEY (it is currently unused anyway).
+  googleIdentityToolkitApiKey: process.env.GOOGLE_IDENTITY_TOOLKIT_API_KEY || '',
   payuMerchantKey: process.env.PAYU_MERCHANT_KEY || '',
   payuSalt: process.env.PAYU_SALT || '',
   payuMode: process.env.PAYU_MODE || 'test',
