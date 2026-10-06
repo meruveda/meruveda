@@ -41,9 +41,8 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      // Client-side twin of the middleware rule: land on the profile login
-      // gate and come back here after verification.
-      router.push(`/profile?next=${encodeURIComponent(pathname)}`);
+      // Client-side twin of the middleware rule (/profile is disabled).
+      router.push("/checkout");
     }
   }, [isLoading, isAuthenticated, router, pathname]);
 

@@ -16,14 +16,14 @@ export async function proxy(request: NextRequest) {
     // Fallback: check Authorization header (for future API use)
     request.headers.get('Authorization')?.replace('Bearer ', '');
 
-  // Protect /account routes — unauthenticated users go to the profile page,
-  // which shows the inline login gate and returns them here afterwards
-  // (?next=). Checkout stays public: its OTP form is a second way to sign in.
+  // Protect /account routes — unauthenticated users go to checkout, whose
+  // OTP form doubles as the login. (/profile is currently disabled, so it
+  // cannot serve as the login gate.)
   if (pathname.startsWith('/account')) {
     if (!authToken) {
       const url = request.nextUrl.clone();
-      url.pathname = '/profile';
-      url.searchParams.set('next', pathname);
+      url.pathname = '/checkout';
+      url.search = '';
       return NextResponse.redirect(url);
     }
   }

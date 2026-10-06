@@ -104,7 +104,7 @@ export default function Header() {
                   <p className="text-xs text-gray-500 truncate">{user.email}</p>
                 </div>
                 <Link
-                  href="/profile"
+                  href="/checkout"
                   onClick={() => setDropdownOpen(false)}
                   className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
                 >
@@ -167,10 +167,10 @@ export default function Header() {
             )}
           </div>
         ) : (
-          /* Guest — profile icon sits next to cart; /profile shows the
-             inline login gate when logged out, then shows the profile. */
+          /* Guest — profile icon sits next to cart; /profile is disabled,
+             so it goes to checkout (OTP login) for now. */
           <Link
-            href="/profile"
+            href="/checkout"
             aria-label="My Profile"
             title="My Profile"
             className="flex items-center text-bg-ivory hover:text-gold-antique transition-colors"
@@ -229,7 +229,7 @@ export default function Header() {
               Contact
             </Link>
             <Link
-              href="/profile"
+              href="/checkout"
               onClick={() => setMobileMenuOpen(false)}
               className="hover:text-gold-antique transition-colors pb-2 border-b border-gold/10"
             >
