@@ -12,15 +12,12 @@ import type {
   AccountReview,
   AddressType,
   LegacyAddress,
-  ReturnRequest,
-  ReturnStatus,
   SavedCard,
 } from "@/types/account";
 
 const LS = {
   addresses: "meruveda_addresses_v2",
   cards: "meruveda_cards_v2",
-  returns: "meruveda_returns_v1",
   reviews: "meruveda_reviews_local_v1",
 };
 
@@ -250,55 +247,6 @@ export const orderService = {
     } catch (err) {
       throw new Error(errMsg(err, "Order not found."));
     }
-  },
-};
-
-// ------------------------------------------------------------------- returns
-
-const RETURN_REASONS = [
-  "Damaged in transit",
-  "Wrong product delivered",
-  "Expired / near-expiry",
-  "Seal opened / tampered",
-  "Quality not as expected",
-  "Changed my mind",
-  "Other",
-];
-
-export const returnService = {
-  reasons: RETURN_REASONS,
-  list(): ReturnRequest[] {
-    return readLS<ReturnRequest[]>(LS.returns, []);
-  },
-  create(input: Omit<ReturnRequest, "id" | "requestDate" | "status" | "refundStatus">): ReturnRequest {
-    const created: ReturnRequest = {
-      ...input,
-      id: uid("ret"),
-      requestDate: new Date().toISOString(),
-      status: "requested",
-      refundStatus: "pending",
-    };
-    const next = [created, ...returnService.list()];
-    writeLS(LS.returns, next);
-    // Also raise a support ticket so the ops team sees it in the real queue.
-    axiosInstance
-      .post("/support", {
-        subject: `[Return] Order ${input.orderNumber} — ${input.productName}`,
-        message: `Reason: ${input.reason}\n${input.description || ""}\nRefund expected: Rs.${input.refundAmount}`,
-        priority: "high",
-      })
-      .catch(() => undefined);
-    return created;
-  },
-  advance(id: string, status: ReturnStatus): ReturnRequest[] {
-    // Demo progression + refund coupling; backend remains source of truth via tickets.
-    const refundStatus =
-      status === "refund_initiated" ? "initiated" : status === "refund_completed" ? "completed" : status === "rejected" ? "rejected" : "pending";
-    const next = returnService.list().map((r) =>
-      r.id === id ? { ...r, status, refundStatus: refundStatus as ReturnRequest["refundStatus"] } : r,
-    );
-    writeLS(LS.returns, next);
-    return next;
   },
 };
 

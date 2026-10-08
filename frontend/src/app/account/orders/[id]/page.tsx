@@ -10,7 +10,6 @@ import {
   Download,
   ExternalLink,
   MapPin,
-  RotateCcw,
   Star,
   Truck,
   Wallet,
@@ -95,7 +94,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const trackingCode = order.awbCode || order.trackingNumber;
-  const canReturn = order.normalizedStatus === "delivered";
   const canReview = order.normalizedStatus === "delivered";
 
   return (
@@ -104,12 +102,29 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         <button onClick={() => router.push("/account/orders")} className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-deep-purple transition-colors">
           <ArrowLeft size={14} /> All orders
         </button>
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-1.5 px-3.5 py-2 border border-gray-200 hover:bg-gray-50 rounded-lg text-xs font-semibold text-gray-700 transition-colors print:hidden"
-        >
-          <Download size={14} /> Print invoice
-        </button>
+        <div className="flex gap-2 print:hidden">
+          <button
+            onClick={async () => {
+              try {
+                const { default: axiosInstance } = await import("@/api/axiosInstance");
+                const res = await axiosInstance.get(`/orders/${orderId}/invoice`, { responseType: "blob" });
+                const url = URL.createObjectURL(res.data);
+                window.open(url, "_blank");
+              } catch {
+                window.print();
+              }
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 border border-gray-200 hover:bg-gray-50 rounded-lg text-xs font-semibold text-gray-700 transition-colors"
+          >
+            <Download size={14} /> Download invoice
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3.5 py-2 border border-gray-200 hover:bg-gray-50 rounded-lg text-xs font-semibold text-gray-700 transition-colors"
+          >
+            Print
+          </button>
+        </div>
       </div>
 
       {/* Header */}
@@ -237,18 +252,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         <div className="border border-gray-100 rounded-xl p-5 bg-white print:hidden">
           <h3 className="font-bold text-deep-purple mb-2 uppercase tracking-wider text-[10px]">Next steps</h3>
           <div className="flex flex-col gap-2">
-            {canReturn && (
-              <Link href={`/account/returns?order=${encodeURIComponent(order.orderNumber)}`} className="flex items-center justify-center gap-1.5 px-3 py-2 border border-gold/40 text-gold hover:bg-gold hover:text-deep-purple rounded-lg text-xs font-bold transition-colors">
-                <RotateCcw size={13} /> Return / refund
-              </Link>
-            )}
             {canReview && (
               <Link href={`/account/reviews?order=${encodeURIComponent(order.orderNumber)}`} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-deep-purple text-white hover:bg-deep-purple/90 rounded-lg text-xs font-bold transition-colors">
                 <Star size={13} /> Review products
               </Link>
             )}
-            {!canReturn && !canReview && (
-              <p className="text-gray-500 leading-relaxed">Returns and reviews unlock once this order is delivered.</p>
+            {!canReview && (
+              <p className="text-gray-500 leading-relaxed">Reviews unlock once this order is delivered.</p>
             )}
           </div>
         </div>

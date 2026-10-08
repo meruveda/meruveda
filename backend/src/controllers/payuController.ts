@@ -1,9 +1,53 @@
 import { Request, Response, NextFunction } from 'express';
 import { payuService } from '../services/payuService';
-import { orderService } from '../services/orderService';
+import { orderService, pushOrderToShiprocket } from '../services/orderService';
 import { orderNotifyService } from '../services/orderNotifyService';
 import { supabase } from '../database/supabase';
 import { config } from '../config/env';
+
+/**
+ * Public base URL of this backend for PayU surl/furl.
+ * Prefers BACKEND_URL when set; otherwise derives from the request host.
+ * In production the scheme is forced to https (never localhost) so PayU
+ * posts the customer's browser back over a secure connection — otherwise
+ * browsers warn "the information you're about to submit is not secure"
+ * and the success redirect can break.
+ */
+function publicBackendUrl(req: Request): string {
+  const fromEnv = (process.env.BACKEND_URL || '').trim().replace(/\/+$/, '');
+  const isProd = process.env.NODE_ENV === 'production';
+  const asHttps = (url: string) => {
+    if (isProd && url.startsWith('http://')) {
+      const host = url.slice('http://'.length).split('/')[0];
+      if (!host.startsWith('localhost') && host !== '127.0.0.1') {
+        return `https://${url.slice('http://'.length)}`;
+      }
+    }
+    return url;
+  };
+  if (fromEnv) return asHttps(fromEnv);
+  const host = req.get('host') || '';
+  const looksPublic = host && !host.startsWith('localhost') && host !== '127.0.0.1';
+  const proto = isProd && looksPublic ? 'https' : req.protocol;
+  return `${proto}://${host}`;
+}
+
+/**
+ * Base URL of the storefront for post-payment redirects.
+ * Falls back to the request host (same-domain Vercel deployment serves
+ * frontend + /api from one origin) when FRONTEND_URL is still localhost.
+ */
+function storefrontBaseUrl(req: Request): string {
+  const configured = config.frontendUrl;
+  const host = req.get('host') || '';
+  const looksPublic = host && !host.startsWith('localhost') && host !== '127.0.0.1';
+  const isLocalDefault = configured.includes('localhost') || configured.includes('127.0.0.1');
+  if (isLocalDefault && looksPublic) {
+    const proto = process.env.NODE_ENV === 'production' ? 'https' : req.protocol;
+    return `${proto}://${host}`;
+  }
+  return configured;
+}
 
 export const initiatePayUPayment = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -31,7 +75,8 @@ export const initiatePayUPayment = async (req: Request, res: Response, next: Nex
       ? shippingAddress.fullName.split(' ')[0] 
       : 'Customer';
 
-    const backendUrl = `${req.protocol}://${req.get('host')}`;
+    const backendUrl = publicBackendUrl(req);
+    console.log(`[PayU] initiate order ${order.order_number}: surl/furl host=${backendUrl}/api/payu/callback`);
 
     const payuParams = payuService.buildCheckoutParams({
       orderNumber: order.order_number,
@@ -124,7 +169,8 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
 
       await upsertTransaction('failed', 'hash_mismatch');
 
-      return res.redirect(`${config.frontendUrl}/checkout/failed?order_id=${order.id}&reason=${encodeURIComponent('Payment response verification failed (Hash Mismatch).')}`);
+      console.log(`[PayU] hash mismatch for order ${orderNumber}, redirecting to failed page`);
+      return res.redirect(`${storefrontBaseUrl(req)}/checkout/failed?order_id=${order.id}&reason=${encodeURIComponent('Payment response verification failed (Hash Mismatch).')}`);
     }
 
     if (status === 'success') {
@@ -137,6 +183,14 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
 
       await upsertTransaction('success', 'captured');
 
+      // Push the paid order to Shiprocket (adhoc create). Never blocks redirect.
+      try {
+        await pushOrderToShiprocket(order.id);
+      } catch (srErr: any) {
+        console.error(`[Shiprocket] auto-push failed for prepaid order ${orderNumber} (${order.id}):`, srErr?.message || srErr);
+        // Retry via POST /orders/:id/push-shiprocket or the failed-push retry endpoint.
+      }
+
       // Post-purchase WhatsApp automation: order confirmation + PDF invoice to
       // the customer and to ADMIN_WHATSAPP_NUMBER. Failures are logged inside
       // the service and must never block the payment redirect.
@@ -146,7 +200,9 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
         console.error('[PayU Callback] Post-purchase WhatsApp messages failed:', notifyErr?.message || notifyErr);
       }
 
-      return res.redirect(`${config.frontendUrl}/checkout/success/${order.id}`);
+      const successUrl = `${storefrontBaseUrl(req)}/checkout/success/${order.id}`;
+      console.log(`[PayU] payment verified for order ${orderNumber}, redirecting to ${successUrl}`);
+      return res.redirect(successUrl);
     } else {
       // Payment failed or cancelled
       await supabase.from('orders').update({
@@ -156,7 +212,8 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
 
       await upsertTransaction('failed', 'failed');
 
-      return res.redirect(`${config.frontendUrl}/checkout/failed?order_id=${order.id}&reason=${encodeURIComponent(payload.error_Message || 'Payment was unsuccessful or cancelled.')}`);
+      console.log(`[PayU] payment ${status} for order ${orderNumber}, redirecting to failed page`);
+      return res.redirect(`${storefrontBaseUrl(req)}/checkout/failed?order_id=${order.id}&reason=${encodeURIComponent(payload.error_Message || 'Payment was unsuccessful or cancelled.')}`);
     }
   } catch (error) {
     next(error);

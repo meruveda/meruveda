@@ -3,9 +3,15 @@ import axiosInstance from '../api/axiosInstance';
 import { Customer, PaginationParams, PaginatedResponse } from '../types';
 
 /** Maps a raw `users` row (+ computed metrics) onto the admin `Customer` shape. */
+const customerDisplayName = (c: any): string => {
+  const full = `${c.first_name || ''} ${c.last_name || ''}`.trim();
+  return c.displayName || full || c.name || c.email || (c.phone ? `Customer ${c.phone}` : 'Guest Customer');
+};
+
 const mapCustomer = (c: any): Customer => ({
   ...c,
-  name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || 'Unknown',
+  name: customerDisplayName(c),
+  city: c.city || '',
   totalOrders: c.totalOrders || 0,
   lifetimeSpend: c.lifetimeSpend || 0,
   isActive: c.active !== false,
@@ -69,7 +75,8 @@ class CustomerService {
     const customer = c?.data || c;
     return {
       ...customer,
-      name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || customer.email || 'Unknown',
+      name: customerDisplayName(customer),
+      city: customer.city || '',
       totalOrders: customer.totalOrders || 0,
       lifetimeSpend: customer.lifetimeSpend || 0,
       isActive: customer.active !== false,
@@ -92,7 +99,8 @@ class CustomerService {
     const data = (response as any).data?.data || (response as any).data || response;
     return {
       ...data,
-      name: `${data.first_name || ''} ${data.last_name || ''}`.trim() || data.email || 'Unknown',
+      name: customerDisplayName(data),
+      city: (data as any).city || '',
       totalOrders: data.totalOrders || 0,
       lifetimeSpend: data.lifetimeSpend || 0,
       isBlocked: data.active === false

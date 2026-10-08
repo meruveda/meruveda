@@ -6,6 +6,12 @@ import { config } from './config/env';
 
 const app = express();
 
+// Behind Vercel / reverse proxies the original scheme arrives via
+// X-Forwarded-Proto. Trust it so req.protocol is https in production —
+// otherwise PayU surl/furl are generated as http:// and the customer's
+// browser warns about insecure submission (and callbacks can break).
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet());
 app.use(cors({

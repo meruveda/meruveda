@@ -9,7 +9,7 @@ export const getReviews = async (req: Request, res: Response, next: NextFunction
   try {
     const { productId, status } = req.query;
 
-    let query = supabase.from('reviews').select('*, users(first_name, last_name)', { count: 'exact' });
+    let query = supabase.from('reviews').select('*, users(first_name, last_name), products(id, name)', { count: 'exact' });
 
     if (productId) query = query.eq('product_id', productId);
     if (status) query = query.eq('status', status);
@@ -44,7 +44,8 @@ export const getMyReviews = async (req: Request, res: Response, next: NextFuncti
 export const createReview = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;
-    const reviewData = { ...req.body, user_id: userId, status: 'approved' };
+    // New reviews enter the moderation queue; admin approval publishes them.
+    const reviewData = { ...req.body, user_id: userId, status: 'pending' };
 
     const { data, error } = await supabase.from('reviews').insert(reviewData).select().single();
     if (error) throw error;
@@ -59,8 +60,13 @@ export const updateReviewStatus = async (req: Request, res: Response, next: Next
     const { id } = req.params;
     const { status } = req.body;
 
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: { message: 'Invalid status. Use pending, approved or rejected.' } });
+    }
+
     const { data, error } = await supabase.from('reviews').update({ status }).eq('id', id).select().single();
     if (error) throw error;
+    if (!data) return res.status(404).json({ error: { message: 'Review not found' } });
     res.json({ data });
   } catch (error) {
     next(error);

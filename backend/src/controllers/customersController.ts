@@ -15,11 +15,14 @@ export const getCustomers = async (req: Request, res: Response, next: NextFuncti
     }
 
     if (search) {
-      query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
+      const safe = String(search).replace(/[%(),"]/g, '').trim().slice(0, 80);
+      if (safe) {
+        query = query.or(`first_name.ilike.%${safe}%,last_name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`);
+      }
     }
 
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(200, Math.max(1, Number(limit) || 10));
     const from = (pageNum - 1) * limitNum;
     const to = from + limitNum - 1;
 
@@ -36,7 +39,7 @@ export const getCustomers = async (req: Request, res: Response, next: NextFuncti
     if (userIds.length > 0) {
       const { data: ordersData } = await supabase
         .from('orders')
-        .select('user_id, total, created_at')
+        .select('user_id, total, created_at, shipping_address')
         .in('user_id', userIds);
       orders = ordersData || [];
     }
@@ -59,17 +62,33 @@ export const getCustomers = async (req: Request, res: Response, next: NextFuncti
       const totalOrders = userOrders.length;
       const lifetimeSpend = userOrders.reduce((sum: number, o: any) => sum + Number(o.total || 0), 0);
 
+      // City: most recent order shipping city, fallback to user city column if present.
+      const sortedOrders = [...userOrders].sort(
+        (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      const city = sortedOrders[0]?.shipping_address?.city || (user as any).city || '';
+
+      // Display name with sensible fallbacks (guest/OTP users often have empty names).
+      const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+      const displayName = fullName || user.email || (user.phone ? `Customer ${user.phone}` : 'Guest Customer');
+
       // Last activity: maximum of user.created_at, user.last_login (if present), latest order created_at, latest activity log created_at
-      const orderDates = userOrders.map((o: any) => new Date(o.created_at).getTime());
-      const logDates = logs.filter((l: any) => l.user_id === user.id).map((l: any) => new Date(l.created_at).getTime());
-      const lastLoginTime = user.last_login ? new Date(user.last_login).getTime() : 0;
-      const createdAtTime = user.created_at ? new Date(user.created_at).getTime() : 0;
+      const toTime = (v: any) => {
+        const t = v ? new Date(v).getTime() : NaN;
+        return Number.isFinite(t) ? t : 0;
+      };
+      const orderDates = userOrders.map((o: any) => toTime(o.created_at)).filter(Boolean);
+      const logDates = logs.filter((l: any) => l.user_id === user.id).map((l: any) => toTime(l.created_at)).filter(Boolean);
+      const lastLoginTime = toTime(user.last_login);
+      const createdAtTime = toTime(user.created_at);
       
-      const maxTime = Math.max(createdAtTime, lastLoginTime, ...orderDates, ...logDates);
-      const lastLogin = new Date(maxTime).toISOString();
+      const maxTime = Math.max(0, createdAtTime, lastLoginTime, ...orderDates, ...logDates);
+      const lastLogin = maxTime > 0 ? new Date(maxTime).toISOString() : null;
 
       return {
         ...rest,
+        displayName,
+        city,
         totalOrders,
         lifetimeSpend,
         lastLogin

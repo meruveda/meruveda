@@ -97,11 +97,10 @@ export const CustomersPage: React.FC = () => {
         Name: c.name,
         Email: c.email,
         Phone: c.phone || '',
-        'Orders Count': c.totalOrders,
-        'Lifetime Spend (INR)': c.lifetimeSpend,
-        'Last Activity': c.lastLogin ? formatDate(c.lastLogin) : '',
-        'Joined On': c.createdAt ? formatDate(c.createdAt) : '',
-        Status: c.isBlocked ? 'Blocked' : 'Active',
+        City: (c as any).city || '',
+        'Total Orders': c.totalOrders,
+        'Total Spent (INR)': c.lifetimeSpend,
+        'Joined Date': c.createdAt ? formatDate(c.createdAt) : '',
       }))
 
       const worksheet = XLSX.utils.json_to_sheet(rows)
@@ -109,11 +108,10 @@ export const CustomersPage: React.FC = () => {
         { wch: 24 },
         { wch: 30 },
         { wch: 16 },
+        { wch: 16 },
         { wch: 13 },
-        { wch: 20 },
         { wch: 18 },
         { wch: 14 },
-        { wch: 10 },
       ]
       const workbook = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Customers')
@@ -154,7 +152,7 @@ export const CustomersPage: React.FC = () => {
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
         >
           {isExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          {isExporting ? 'Preparing…' : 'Download Excel (.xlsx)'}
+          {isExporting ? 'Preparing…' : 'Export'}
         </button>
       </div>
 

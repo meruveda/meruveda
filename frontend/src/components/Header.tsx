@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ShoppingCart, User, ChevronDown, Package, RotateCcw, Star, MessageSquare, Heart, Settings, LogOut, Menu, X } from "lucide-react";
+import { ShoppingCart, User, ChevronDown, Package, Star, MessageSquare, Heart, Settings, LogOut, Menu, X } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useRef, useEffect } from "react";
@@ -116,13 +116,6 @@ export default function Header() {
                   className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
                 >
                   <Package size={15} /> My Orders
-                </Link>
-                <Link
-                  href="/account/returns"
-                  onClick={() => setDropdownOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-bg-ivory hover:text-plum-deep transition-colors"
-                >
-                  <RotateCcw size={15} /> Returns
                 </Link>
                 <Link
                   href="/account/reviews"

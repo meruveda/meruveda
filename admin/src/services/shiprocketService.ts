@@ -1,4 +1,5 @@
 import { apiClient } from '../api/apiClient';
+import axiosInstance from '../api/axiosInstance';
 
 class ShiprocketService {
   async generateAwb(shipmentId: string | number) {
@@ -23,6 +24,16 @@ class ShiprocketService {
 
   async cancelOrder(orderId: string) {
     return apiClient.post('/shiprocket/cancel-order', { orderId });
+  }
+
+  async pushOrderToShiprocket(orderId: string) {
+    const res = await axiosInstance.post(`/orders/${orderId}/push-shiprocket`);
+    return res.data;
+  }
+
+  async retryFailedPushes(limit = 20) {
+    const res = await axiosInstance.post('/orders/retry-shiprocket-failed', null, { params: { limit } });
+    return res.data;
   }
 }
 

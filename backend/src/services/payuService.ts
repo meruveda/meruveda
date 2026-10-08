@@ -116,6 +116,19 @@ export const payuService = {
     const surl = `${payload.backendUrl}/api/payu/callback`;
     const furl = `${payload.backendUrl}/api/payu/callback`;
 
+    // Never hand PayU (or the browser) an http:// URL in production — it
+    // triggers "information you're about to submit is not secure" warnings.
+    // Localhost development is intentionally left untouched.
+    const secure = (url: string) => {
+      if (process.env.NODE_ENV === 'production' && url.startsWith('http://')) {
+        const host = url.slice('http://'.length).split('/')[0];
+        if (!host.startsWith('localhost') && host !== '127.0.0.1') {
+          return `https://${url.slice('http://'.length)}`;
+        }
+      }
+      return url;
+    };
+
     const hash = this.generateRequestHash({
       txnid,
       amount: amountStr,
@@ -132,10 +145,10 @@ export const payuService = {
       firstname,
       email,
       phone,
-      surl,
-      furl,
+      surl: secure(surl),
+      furl: secure(furl),
       hash,
-      actionUrl: config.payuBaseUrl
+      actionUrl: secure(config.payuBaseUrl)
     };
   }
 };

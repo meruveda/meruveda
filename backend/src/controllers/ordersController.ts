@@ -1,9 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import { orderService } from '../services/orderService';
+import { orderService, pushOrderToShiprocket, retryFailedShiprocketPushes } from '../services/orderService';
 import { orderNotifyService } from '../services/orderNotifyService';
 import { supabase } from '../database/supabase';
 import { normalizePhone } from '../services/whatsappService';
 import { hasColumn } from '../services/schemaGuard';
+import { shiprocketTrackingService } from '../services/shiprocket/tracking.service';
+import { shiprocketWebhookService } from '../services/shiprocket/webhook.service';
+import { getOrderForInvoice, generateInvoicePdf } from '../services/invoiceService';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -123,6 +126,105 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+/**
+ * PUBLIC live AWB lookup — tracking ID entered manually on /track.
+ * Calls Shiprocket live and syncs the matching local order (if any).
+ */
+export const trackByAwb = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const awb = String(req.query.awb || req.query.trackingId || '').trim();
+    if (!awb) {
+      return res.status(400).json({ error: { message: 'Please enter a tracking ID (AWB).' } });
+    }
+    if (!/^[A-Za-z0-9]{6,30}$/.test(awb)) {
+      return res.status(400).json({ error: { message: 'That tracking ID looks invalid. AWBs are usually 6+ letters/digits.' } });
+    }
+    let live: any;
+    try {
+      live = await shiprocketTrackingService.trackAwb(awb);
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (err?.status === 404 || /not found|invalid|no data/i.test(msg)) {
+        return res.status(404).json({ error: { message: 'No shipment found for this tracking ID. Check the AWB and try again.' } });
+      }
+      throw err;
+    }
+    const track = live?.tracking_data?.shipment_track?.[0];
+    if (!track) {
+      return res.status(404).json({ error: { message: 'No shipment found for this tracking ID. Check the AWB and try again.' } });
+    }
+    try {
+      await shiprocketWebhookService.processWebhook({
+        awb,
+        current_status: track.current_status,
+        shipment_id: track.shipment_id ? String(track.shipment_id) : null,
+        sr_order_id: track.order_id ? String(track.order_id) : null,
+        courier: track.courier_name,
+        expected_delivery: track.etd,
+        tracking_url: track.tracking_url,
+        scans: (track.scans || []).map((scan: any) => ({
+          date: scan.date,
+          activity: scan.activity,
+          location: scan.location,
+          'sr-status-label': scan.status,
+        })),
+      });
+    } catch (syncErr) {
+      console.error('[Track AWB] DB sync failed:', syncErr);
+    }
+    res.json({
+      data: {
+        awb_code: track.awb_code || awb,
+        courier_name: track.courier_name || null,
+        current_status: track.current_status || null,
+        status: track.current_status || null,
+        tracking_status: track.current_status || null,
+        estimated_delivery: track.etd || null,
+        tracking_url: track.tracking_url || null,
+        origin: track.origin || null,
+        destination: track.destination || null,
+        scans: track.scans || [],
+        tracking_history: (track.scans || []).map((scan: any) => ({
+          activity: scan.activity,
+          location: scan.location,
+          created_at: scan.date,
+        })),
+      },
+      live: true,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Download the fixed GST tax invoice PDF (same template used for WhatsApp). */
+export const downloadInvoice = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { data: orderRow } = await supabase
+      .from('orders')
+      .select('id, user_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (!orderRow) {
+      return res.status(404).json({ error: { message: 'Order not found' } });
+    }
+    if (req.user?.role !== 'admin' && orderRow.user_id !== req.user?.id) {
+      return res.status(403).json({ error: { message: 'Forbidden' } });
+    }
+    const order = await getOrderForInvoice(id as string);
+    const pdf = await generateInvoicePdf(order);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Invoice-${order.order_number}.pdf"`);
+    res.send(pdf);
+  } catch (error: any) {
+    if (error.status === 404) {
+      return res.status(404).json({ error: { message: error.message } });
+    }
+    next(error);
+  }
+};
+
 /** Regenerate + resend the PDF invoice over WhatsApp (customer and admin). */
 export const resendInvoice = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -147,6 +249,35 @@ export const resendInvoice = async (req: Request, res: Response, next: NextFunct
     if (error.status === 404) {
       return res.status(404).json({ error: { message: error.message } });
     }
+    next(error);
+  }
+};
+
+/** Manual fallback: push one order to Shiprocket (admin). */
+export const pushToShiprocket = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const result = await pushOrderToShiprocket(id as string);
+    res.json({ data: result, message: 'Order pushed to Shiprocket.' });
+  } catch (error: any) {
+    console.error(`[Shiprocket] manual push failed for order ${req.params.id}:`, error?.message || error);
+    res.status(502).json({ error: { message: error?.message || 'Shiprocket push failed. Check server logs.' } });
+  }
+};
+
+/** Retry failed pushes (admin or cron with CRON_SECRET). */
+export const retryShiprocketPushes = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = String(req.headers.authorization || '');
+    const isCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
+    if (req.user?.role !== 'admin' && !isCron) {
+      return res.status(403).json({ error: { message: 'Forbidden' } });
+    }
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const results = await retryFailedShiprocketPushes(limit);
+    res.json({ data: results });
+  } catch (error) {
     next(error);
   }
 };

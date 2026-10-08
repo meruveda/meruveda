@@ -39,6 +39,21 @@ export const OrderDetailPage: React.FC = () => {
   const [isRefreshingTracking, setIsRefreshingTracking] = useState(false)
   const [isCancellingOrder, setIsCancellingOrder] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isPushingShiprocket, setIsPushingShiprocket] = useState(false)
+
+  const handlePushToShiprocket = async () => {
+    if (!order) return;
+    setIsPushingShiprocket(true);
+    try {
+      await shiprocketService.pushOrderToShiprocket(order.id);
+      toast.success('Order pushed to Shiprocket');
+      fetchOrderDetail();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error?.message || err.message || 'Failed to push to Shiprocket');
+    } finally {
+      setIsPushingShiprocket(false);
+    }
+  };
 
   const handleGenerateAwb = async () => {
     const shipmentId = (order as any)?.shipment_id || order?.shipmentId;
@@ -99,29 +114,22 @@ export const OrderDetailPage: React.FC = () => {
   }
 
   const handleDownloadInvoice = async () => {
-    const shipmentId = (order as any)?.shipment_id || order?.shipmentId;
-    if (!shipmentId) return;
-
-    // Open a new tab immediately (synchronously) to avoid popup blocker on mobile
-    const newWindow = window.open('about:blank', '_blank');
-    if (newWindow) {
-      newWindow.document.write('<p>Generating invoice, please wait...</p>');
-    }
-
+    if (!order) return;
+    // Fixed GST tax invoice (backend pdf-lib template) - same file sent on WhatsApp.
     setIsDownloadingInvoice(true);
     try {
-      const response = await shiprocketService.getInvoice(shipmentId);
-      const invoiceUrl = response?.data?.invoice_url || response?.data?.response?.data?.invoice_url;
-      if (invoiceUrl && newWindow) {
-        newWindow.location.href = invoiceUrl;
-        toast.success('Invoice opened in new tab');
-      } else {
-        if (newWindow) newWindow.close();
-        toast.error('Invoice URL not found in response');
-      }
+      const token = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
+      const base = (import.meta as any).env?.VITE_API_URL || '/api';
+      const res = await fetch(base + '/orders/' + order.id + '/invoice', {
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+      });
+      if (!res.ok) throw new Error('Failed to download invoice');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      toast.success('Invoice opened in new tab');
     } catch (err: any) {
-      if (newWindow) newWindow.close();
-      toast.error(err.response?.data?.message || err.message || 'Failed to download invoice');
+      toast.error(err?.message || 'Failed to download invoice');
     } finally {
       setIsDownloadingInvoice(false);
     }
@@ -426,6 +434,22 @@ export const OrderDetailPage: React.FC = () => {
             </form>
           </div>
 
+          {!((order as any).shiprocket_order_id || (order as any).shipment_id) && (
+            <div className="card p-6 space-y-4">
+              <h3 className="section-title flex items-center gap-1.5">
+                <Truck className="h-5 w-5 text-slate-400" /> Shiprocket Logistics
+              </h3>
+              <p className="text-xs text-slate-500">This order has not been pushed to Shiprocket yet.</p>
+              <button
+                disabled={isPushingShiprocket}
+                className="btn-primary text-xs py-2 justify-center w-full"
+                onClick={handlePushToShiprocket}
+              >
+                {isPushingShiprocket ? 'Pushing...' : 'Push to Shiprocket'}
+              </button>
+            </div>
+          )}
+
           {/* Shiprocket Panel */}
           {((order as any).shiprocket_order_id || (order as any).shipment_id) && (
             <div className="card p-6 space-y-4">
@@ -492,7 +516,7 @@ export const OrderDetailPage: React.FC = () => {
                     {isDownloadingLabel ? 'Downloading...' : 'Print Label'}
                   </button>
                   <button
-                    disabled={!((order as any).shipment_id || order.shipmentId) || isDownloadingInvoice}
+                    disabled={isDownloadingInvoice}
                     className="btn-outline text-xs py-1.5 justify-center"
                     onClick={handleDownloadInvoice}
                   >

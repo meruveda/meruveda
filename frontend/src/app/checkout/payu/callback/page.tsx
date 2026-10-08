@@ -19,16 +19,42 @@ function PayUCallbackContent() {
           payload[key] = value;
         });
 
-        // Send to backend callback endpoint to verify hash and update order status
-        const response = await axiosInstance.post("/payu/callback", payload);
+        // Fallback verification path: the primary flow is PayU posting the
+        // browser directly to the backend callback, which 302-redirects to
+        // /checkout/success/[orderId] after verifying the hash server-side.
+        // This page only runs if the gateway returns here instead.
+        // Send to backend callback endpoint to verify hash and update order status.
+        // NOTE: no "success" navigation happens unless the backend confirms it.
+        const response = await axiosInstance.post("/payu/callback", payload, {
+          // The backend answers with a redirect, not JSON. Don't follow it
+          // into a failed page render — inspect the outcome instead.
+          maxRedirects: 0,
+          validateStatus: (s) => s < 400,
+        });
         const result = response.data;
 
-        if (result.success) {
-          router.replace(`/checkout?order_id=${result.orderId}&status=confirmed`);
+        // Backend redirect responses carry no JSON body; a 3xx here means the
+        // browser already navigated. Only JSON { success, orderId } counts.
+        const orderId = result?.orderId || payload.txnid || "";
+        if (result && result.success && orderId) {
+          router.replace(`/checkout/success/${orderId}`);
+        } else if (result && result.success === false) {
+          router.replace(`/checkout/failed?order_id=${orderId}&reason=${encodeURIComponent(result.message || 'Payment failed')}`);
         } else {
-          router.replace(`/checkout/failed?order_id=${result.orderId || ''}&reason=${encodeURIComponent(result.message || 'Payment failed')}`);
+          // Non-JSON (redirect) response: verification already happened
+          // server-side and the browser is navigating — stay put briefly,
+          // then fall back to order lookup via txnid if still here.
+          setError("Payment is being verified. If this page does not change, check your order history.");
         }
       } catch (err: any) {
+        // A 3xx thrown by maxRedirects:0 means the backend issued its
+        // redirect (success or failed page) — let the navigation proceed.
+        const status = err?.response?.status;
+        const location = err?.response?.headers?.location;
+        if (status && status >= 300 && status < 400 && location) {
+          window.location.href = location;
+          return;
+        }
         console.error("PayU callback error", err);
         setError("Failed to process payment callback.");
       }

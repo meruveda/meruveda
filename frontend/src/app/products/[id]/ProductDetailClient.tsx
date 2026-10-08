@@ -558,7 +558,7 @@ export default function ProductDetailClient({ product }: { product: any }) {
                   </div>
                 ) : reviewSuccess ? (
                   <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-800">
-                    🎉 Thank you! Your review has been submitted and published successfully.
+                    🎉 Thank you! Your review has been submitted and is awaiting approval.
                   </div>
                 ) : (
                   <form onSubmit={handleReviewSubmit} className="space-y-4">

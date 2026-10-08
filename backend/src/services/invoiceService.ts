@@ -10,8 +10,11 @@ const money = (value: any) => `Rs. ${Number(value || 0).toFixed(2)}`;
 
 const SELLER = {
   name: 'MeruVeda Wellness',
-  address: 'Rajasthan, India',
+  line1: 'Keharsh Enterprises (Sole Proprietorship)',
+  line2: 'S/N. 12, Viru City Gym Road, Inside Jalori Gate,',
+  line3: 'Jodhpur - 342001, Rajasthan, India',
   gstin: process.env.GSTIN || '08BFPPS7045C1Z4',
+  email: 'customercare@meruvedawellness.com',
   website: process.env.FRONTEND_URL || 'https://meruvedawellness.com',
 };
 
@@ -62,20 +65,31 @@ export async function generateInvoicePdf(order: any): Promise<Buffer> {
   drawHeader(page, width, orderNumber, created);
 
   // ---- Seller / buyer blocks ----
+  // Fixed template: header + From / Bill To / Ship To + items + totals.
   let y = 730;
   page.drawText('From', { x: 40, y, size: 9, font: bold, color: GREY });
   y -= 14;
-  [SELLER.name, SELLER.address, `GSTIN: ${SELLER.gstin}`, SELLER.website].forEach((line) => {
+  [SELLER.name, SELLER.line1, SELLER.line2, SELLER.line3, `GSTIN: ${SELLER.gstin}`, SELLER.email, SELLER.website].forEach((line) => {
     page.drawText(line, { x: 40, y, size: 10, font: helv, color: BRAND });
     y -= 13;
   });
 
-  const addr = order.shipping_address || {};
+  const bill = order.billing_address || {};
+  const ship = order.shipping_address || {};
+  const hasSeparateShipping = Boolean(order.shipping_address) && JSON.stringify(bill) !== JSON.stringify(ship);
+  const buyer = {
+    fullName: bill.fullName || ship.fullName || 'Customer',
+    addressLine: bill.addressLine || ship.addressLine || '',
+    city: bill.city || ship.city || '',
+    state: bill.state || ship.state || '',
+    zipCode: bill.zipCode || ship.zipCode || '',
+    phone: bill.phone || ship.phone || '',
+  };
   const buyerLines = [
-    addr.fullName || 'Customer',
-    addr.addressLine || '',
-    `${addr.city || ''}${addr.state ? ', ' + addr.state : ''}${addr.zipCode ? ' - ' + addr.zipCode : ''}`,
-    addr.phone ? `Phone: ${addr.phone}` : '',
+    buyer.fullName,
+    buyer.addressLine,
+    `${buyer.city}${buyer.state ? ', ' + buyer.state : ''}${buyer.zipCode ? ' - ' + buyer.zipCode : ''}`,
+    buyer.phone ? `Phone: ${buyer.phone}` : '',
     order.users?.email ? `Email: ${order.users.email}` : '',
   ].filter(Boolean);
 
@@ -86,6 +100,21 @@ export async function generateInvoicePdf(order: any): Promise<Buffer> {
     page.drawText(String(line).slice(0, 60), { x: 300, y: by, size: 10, font: helv, color: BRAND });
     by -= 13;
   });
+  if (hasSeparateShipping) {
+    by -= 4;
+    page.drawText('Ship To', { x: 300, y: by, size: 9, font: bold, color: GREY });
+    by -= 14;
+    const shipLines = [
+      ship.fullName || '',
+      ship.addressLine || '',
+      `${ship.city || ''}${ship.state ? ', ' + ship.state : ''}${ship.zipCode ? ' - ' + ship.zipCode : ''}`,
+      ship.phone ? `Phone: ${ship.phone}` : '',
+    ].filter(Boolean);
+    shipLines.forEach((line) => {
+      page.drawText(String(line).slice(0, 60), { x: 300, y: by, size: 10, font: helv, color: BRAND });
+      by -= 13;
+    });
+  }
 
   // ---- Items table ----
   y = Math.min(y, by) - 24;

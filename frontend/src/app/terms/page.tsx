@@ -8,7 +8,7 @@ export default function TermsandConditionsPage() {
           
           <div className="mb-10 text-gray-700 leading-relaxed bg-ivory p-6 rounded-xl border border-gray-100">
             <p className="mb-3">Welcome to MERUVEDA Wellness ("MERUVEDA", "we", "our", "us"). These Terms & Conditions ("Terms") govern your use of our website, products, services, subscriptions, and all related features available through meruvedawellness.com.</p>
-            <p className="mb-3">By accessing or using this website, you agree to be bound by these Terms, along with our Privacy Policy, Shipping Policy, and Refund & Cancellation Policy.</p>
+            <p className="mb-3">By accessing or using this website, you agree to be bound by these Terms, along with our Privacy Policy and Shipping Policy.</p>
             <p className="font-medium text-deep-purple">If you do not agree with these Terms, please do not use this website.</p>
           </div>
 

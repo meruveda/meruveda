@@ -47,7 +47,7 @@ export default function OrdersPage() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return orders.filter((o) => {
-      if (filter === "active" && ["delivered", ...TERMINAL_BAD, "returned", "refunded"].includes(o.normalizedStatus)) return false;
+      if (filter === "active" && ["delivered", ...TERMINAL_BAD].includes(o.normalizedStatus)) return false;
       if (filter === "delivered" && o.normalizedStatus !== "delivered") return false;
       if (filter === "cancelled" && !TERMINAL_BAD.includes(o.normalizedStatus)) return false;
       if (!q) return true;
@@ -59,15 +59,24 @@ export default function OrdersPage() {
   }, [orders, filter, query]);
 
   const invoice = (order: AccountOrder) => {
-    // Reuse the printable invoice via the detail page (?print=1 triggers print).
-    router.push(`/account/orders/${encodeURIComponent(order.id)}?print=1`);
+    // Fixed GST invoice PDF download (backend template).
+    import("@/api/axiosInstance").then(async ({ default: axiosInstance }) => {
+      try {
+        const res = await axiosInstance.get(`/orders/${order.id}/invoice`, { responseType: "blob" });
+        const url = URL.createObjectURL(res.data);
+        window.open(url, "_blank");
+      } catch {
+        // Fallback to printable detail view.
+        router.push(`/account/orders/${encodeURIComponent(order.id)}?print=1`);
+      }
+    });
   };
 
   return (
     <div>
       <SectionHeader
         title="My Orders"
-        subtitle="Track shipments, view invoices, return items or buy again."
+        subtitle="Track shipments, view invoices or buy again."
       />
 
       {/* Search + filters */}

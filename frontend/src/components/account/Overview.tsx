@@ -7,14 +7,13 @@ import {
   MapPin,
   Package,
   Pencil,
-  RotateCcw,
   ShieldCheck,
   Star,
   Truck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useWishlist } from "@/context/WishlistContext";
-import type { AccountOrder, ReturnRequest } from "@/types/account";
+import type { AccountOrder } from "@/types/account";
 import { memberSinceLabel } from "@/types/account";
 import { EmptyState, StatusBadge } from "./ui";
 
@@ -57,7 +56,6 @@ export function ProfileHeaderCard({ onEdit }: { onEdit: () => void }) {
 
 export interface OverviewData {
   orders: AccountOrder[];
-  returns: ReturnRequest[];
   reviewCount: number;
   pendingReviews: number;
 }
@@ -72,14 +70,7 @@ export function DashboardCards({ data, loading }: { data: OverviewData; loading:
         href: "/account/orders",
         icon: Package,
         total: data.orders.length,
-        sub: `${data.orders.filter((o) => !["delivered", "cancelled", "refunded", "returned", "failed"].includes(o.normalizedStatus)).length} active`,
-      },
-      {
-        name: "Returns",
-        href: "/account/returns",
-        icon: RotateCcw,
-        total: data.returns.length,
-        sub: `${data.returns.filter((r) => !["refund_completed", "rejected"].includes(r.status)).length} active`,
+        sub: `${data.orders.filter((o) => !["delivered", "cancelled", "failed"].includes(o.normalizedStatus)).length} active`,
       },
       {
         name: "Reviews",
@@ -99,7 +90,7 @@ export function DashboardCards({ data, loading }: { data: OverviewData; loading:
     [data, wishlist.length],
   );
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" aria-label="Account summary">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3" aria-label="Account summary">
       {cards.map((c) => {
         const Icon = c.icon;
         return (

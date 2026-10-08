@@ -41,7 +41,18 @@ export const config = {
     .filter(Boolean),
   // Base URL of the customer-facing frontend — used to construct absolute
   // redirect URLs for payment gateway callbacks.
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  // In production plain-http values are upgraded to https so payment
+  // redirects never go over an insecure connection.
+  frontendUrl: (() => {
+    const raw = process.env.FRONTEND_URL || 'http://localhost:3000';
+    if (process.env.NODE_ENV === 'production' && raw.startsWith('http://')) {
+      const host = raw.slice('http://'.length).split('/')[0];
+      if (host !== 'localhost:3000' && !host.startsWith('localhost:') && host !== '127.0.0.1') {
+        return `https://${raw.slice('http://'.length)}`;
+      }
+    }
+    return raw;
+  })(),
   // No hardcoded fallback: this key used to live in source control and must be
   // supplied via GOOGLE_IDENTITY_TOOLKIT_API_KEY (it is currently unused anyway).
   googleIdentityToolkitApiKey: process.env.GOOGLE_IDENTITY_TOOLKIT_API_KEY || '',

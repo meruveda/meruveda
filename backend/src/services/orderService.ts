@@ -236,105 +236,31 @@ export const orderService = {
     // ============================================
     // Shiprocket Integration
     // ============================================
-    // TODO: The Shiprocket order-creation trigger currently fires on `config.shiprocketTestMode`
-    // rather than on confirmed payment. This needs to move to the Razorpay success webhook.
-    // Leaving as-is for now pending product decision.
-    if (config.shiprocketTestMode) {
+    // Auto-push: COD orders push immediately on placement. Prepaid (PayU)
+    // orders push from the PayU success callback after payment is confirmed.
+    // SHIPROCKET_TEST_MODE=true preserves the old behaviour (push on create
+    // for testing) without gating production pushes.
+    const isCODPlacement =
+      order.payment_method === 'Cash On Delivery' || String(order.payment_method).toUpperCase() === 'COD';
+    if (config.shiprocketTestMode || isCODPlacement) {
       // Temporarily mark order as processing for testing (PAID)
       // We avoid 'PAID (TEST)' since it violates the DB CHECK constraint for status.
-      order.status = 'processing';
-      await supabase.from('orders').update({ status: 'processing' }).eq('id', order.id);
+      if (config.shiprocketTestMode) {
+        order.status = 'processing';
+        await supabase.from('orders').update({ status: 'processing' }).eq('id', order.id);
+      }
 
       try {
-        if (items && items.length > 0 && order.shipping_address) {
-          // Re-attach billing address for Shiprocket payload
-          order.billing_address = billingAddress;
-        // Fetch product dimensions
-        const productIds = items.map((i: any) => i.product_id);
-        const { data: products } = await supabase
-          .from('products')
-          .select('id, name, sku, weight, length, breadth, height, hsn')
-          .in('id', productIds);
-
-        const shiprocketItems = items.map((item: any) => {
-          const prod: any = products?.find((p: any) => p.id === item.product_id) || {};
-          return {
-            name: prod.name || 'Product',
-            sku: prod.sku || `SKU-${item.product_id.substring(0, 8).toUpperCase()}`,
-            units: item.quantity,
-            selling_price: item.price,
-            discount: 0,
-            tax: '',
-            hsn: prod.hsn || ''
-          };
-        });
-
-        // Calculate overall dimensions & weight (approximate, sum of weights, max of dims)
-        let totalWeight = 0, maxLength = 10, maxBreadth = 10, maxHeight = 10;
-        if (products) {
-          products.forEach(p => {
-            const itemQty = items.find((i: any) => i.product_id === p.id)?.quantity || 1;
-            totalWeight += (Number(p.weight) || 0.5) * itemQty;
-            maxLength = Math.max(maxLength, Number(p.length) || 10);
-            maxBreadth = Math.max(maxBreadth, Number(p.breadth) || 10);
-            maxHeight += (Number(p.height) || 10) * itemQty; // Stacking height
-          });
-        }
-
-        const srPayload: ShiprocketOrderPayload = {
-          order_id: order.order_number,
-          order_date: new Date().toISOString().split('T')[0],
-          pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || '',
-          billing_customer_name: order.billing_address?.fullName || order.shipping_address.fullName,
-          billing_last_name: '',
-          billing_address: order.billing_address?.addressLine || order.shipping_address.addressLine,
-          billing_city: order.billing_address?.city || order.shipping_address.city,
-          billing_pincode: order.billing_address?.zipCode || order.shipping_address.zipCode,
-          billing_state: order.billing_address?.state || order.shipping_address.state,
-          billing_country: 'India',
-          billing_email: order.user_email || 'customer@meruveda.com',
-          billing_phone: order.billing_address?.phone || order.shipping_address.phone,
-          shipping_is_billing: true,
-          shipping_customer_name: order.shipping_address.fullName,
-          shipping_last_name: '',
-          shipping_address: order.shipping_address.addressLine,
-          shipping_city: order.shipping_address.city,
-          shipping_pincode: order.shipping_address.zipCode,
-          shipping_country: 'India',
-          shipping_state: order.shipping_address.state,
-          shipping_phone: order.shipping_address.phone,
-          order_items: shiprocketItems,
-          payment_method: order.payment_method === 'Cash On Delivery' ? 'COD' : 'Prepaid',
-          shipping_charges: order.shipping_cost || 0,
-          giftwrap_charges: 0,
-          transaction_charges: 0,
-          total_discount: 0,
-          sub_total: order.total,
-          length: maxLength,
-          breadth: maxBreadth,
-          height: maxHeight,
-          weight: totalWeight
-        };
-
-        const srResponse = await shiprocketOrderService.createOrder(srPayload);
-
-        if (srResponse && srResponse.order_id) {
-          // Save shiprocket IDs
-          await supabase.from('orders').update({
-            shiprocket_order_id: srResponse.order_id.toString(),
-            shipment_id: srResponse.shipment_id?.toString() || '',
-            pickup_location: srPayload.pickup_location,
-            tracking_status: 'NEW'
-          }).eq('id', order.id);
-          
-          order.shiprocket_order_id = srResponse.order_id.toString();
-          order.shipment_id = srResponse.shipment_id?.toString() || '';
-        }
+        await pushOrderToShiprocket(order.id);
+        const { data: refreshed } = await supabase.from('orders').select('shiprocket_order_id, shipment_id').eq('id', order.id).maybeSingle();
+        if (refreshed?.shiprocket_order_id) {
+          order.shiprocket_order_id = refreshed.shiprocket_order_id;
+          order.shipment_id = refreshed.shipment_id;
         }
       } catch (shiprocketErr) {
-        console.error('Shiprocket order creation failed:', shiprocketErr);
-        // We don't fail the local order creation, just log it. 
-        // A background job could retry failed Shiprocket syncs.
+        console.error(`[Shiprocket] auto-push failed for order ${order.order_number} (${order.id}):`, shiprocketErr);
+        // We don't fail the local order creation, just log it.
+        // Retry via POST /orders/:id/push-shiprocket or the failed-push cron.
       }
     }
 
@@ -651,6 +577,145 @@ export const orderService = {
       if (orderErr) throw orderErr;
     }
 };
+
+export async function pushOrderToShiprocket(orderId: string) {
+  const { data: order, error: fetchErr } = await supabase.from('orders').select('*').eq('id', orderId).single();
+  if (fetchErr || !order) throw new Error('Order not found for Shiprocket push');
+  if ((order as any).shiprocket_order_id) {
+    console.log(`[Shiprocket] order ${order.order_number} already pushed (sr_order_id=${(order as any).shiprocket_order_id}), skipping.`);
+    return { skipped: true, shiprocket_order_id: (order as any).shiprocket_order_id };
+  }
+
+  const { data: dbItems } = await supabase.from('order_items').select('*').eq('order_id', orderId);
+  const items = dbItems || [];
+  if (items.length === 0 || !order.shipping_address) {
+    throw new Error('Order has no items or shipping address; cannot push to Shiprocket');
+  }
+
+  const productIds = items.map((i: any) => i.product_id).filter(Boolean);
+  const { data: products } = await supabase
+    .from('products')
+    .select('id, name, sku, weight, length, breadth, height, hsn')
+    .in('id', productIds);
+
+  const shiprocketItems = items.map((item: any) => {
+    const prod: any = products?.find((p: any) => p.id === item.product_id) || {};
+    return {
+      name: (prod.name || item.product_name || 'Product').slice(0, 100),
+      sku: prod.sku || item.sku || `SKU-${String(item.product_id || 'NA').substring(0, 8).toUpperCase()}`,
+      units: Number(item.quantity) || 1,
+      selling_price: Number(item.price) || 0,
+      discount: 0,
+      tax: '',
+      hsn: prod.hsn || '',
+    };
+  });
+
+  let totalWeight = 0;
+  let maxLength = 10;
+  let maxBreadth = 10;
+  let maxHeight = 10;
+  if (products) {
+    products.forEach((p: any) => {
+      const itemQty = items.find((i: any) => i.product_id === p.id)?.quantity || 1;
+      totalWeight += (Number(p.weight) || 0.5) * itemQty;
+      maxLength = Math.max(maxLength, Number(p.length) || 10);
+      maxBreadth = Math.max(maxBreadth, Number(p.breadth) || 10);
+      maxHeight += (Number(p.height) || 0) * itemQty;
+    });
+  }
+  maxHeight = Math.max(10, maxHeight);
+  totalWeight = Math.max(0.1, Number(totalWeight.toFixed(2)));
+
+  const billing = order.billing_address || order.shipping_address;
+  const shipping = order.shipping_address;
+  const normalizePhone10 = (v: any) => {
+    let d = String(v || '').replace(/\D/g, '');
+    if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+    if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+    return d;
+  };
+  const pickupLocation = process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary';
+  if (!process.env.SHIPROCKET_PICKUP_LOCATION) {
+    console.warn('[Shiprocket] SHIPROCKET_PICKUP_LOCATION is not set — falling back to "Primary". It must match the dashboard name exactly.');
+  }
+  const isCOD = order.payment_method === 'Cash On Delivery' || String(order.payment_method).toUpperCase() === 'COD';
+
+  const srPayload: ShiprocketOrderPayload = {
+    order_id: order.order_number,
+    order_date: new Date(order.created_at || Date.now()).toISOString().split('T')[0],
+    pickup_location: pickupLocation,
+    channel_id: process.env.SHIPROCKET_CHANNEL_ID || '',
+    billing_customer_name: (billing.fullName || shipping.fullName || 'Customer').slice(0, 50),
+    billing_last_name: '',
+    billing_address: billing.addressLine || shipping.addressLine || '',
+    billing_city: billing.city || shipping.city || '',
+    billing_pincode: billing.zipCode || shipping.zipCode || '',
+    billing_state: billing.state || shipping.state || '',
+    billing_country: 'India',
+    billing_email: order.user_email || 'customer@meruveda.com',
+    billing_phone: normalizePhone10(billing.phone || shipping.phone),
+    shipping_is_billing: true,
+    shipping_customer_name: (shipping.fullName || 'Customer').slice(0, 50),
+    shipping_last_name: '',
+    shipping_address: shipping.addressLine || '',
+    shipping_address_2: '',
+    shipping_city: shipping.city || '',
+    shipping_pincode: shipping.zipCode || '',
+    shipping_country: 'India',
+    shipping_state: shipping.state || '',
+    shipping_email: order.user_email || 'customer@meruveda.com',
+    shipping_phone: normalizePhone10(shipping.phone),
+    order_items: shiprocketItems,
+    payment_method: isCOD ? 'COD' : 'Prepaid',
+    shipping_charges: Number(order.shipping_fee ?? 0),
+    giftwrap_charges: 0,
+    transaction_charges: 0,
+    total_discount: 0,
+    sub_total: Number(order.total) || 0,
+    length: maxLength,
+    breadth: maxBreadth,
+    height: maxHeight,
+    weight: totalWeight,
+  };
+
+  console.log(`[Shiprocket] pushing order ${order.order_number} (${order.id}) payment=${srPayload.payment_method} pickup=${pickupLocation} weight=${totalWeight} items=${shiprocketItems.length}`);
+  const srResponse = await shiprocketOrderService.createOrder(srPayload);
+  console.log(`[Shiprocket] push response for ${order.order_number}:`, JSON.stringify(srResponse).slice(0, 1000));
+
+  if (srResponse && (srResponse as any).order_id) {
+    await supabase.from('orders').update({
+      shiprocket_order_id: String((srResponse as any).order_id),
+      shipment_id: String((srResponse as any).shipment_id || ''),
+      pickup_location: pickupLocation,
+      tracking_status: 'NEW',
+      last_tracking_update: new Date().toISOString(),
+    }).eq('id', order.id);
+    return srResponse;
+  }
+  throw new Error(`Shiprocket create returned no order_id: ${JSON.stringify(srResponse).slice(0, 500)}`);
+}
+
+export async function retryFailedShiprocketPushes(limit = 20) {
+  const { data: pending } = await supabase
+    .from('orders')
+    .select('id, order_number, status, payment_status, created_at')
+    .is('shiprocket_order_id', null)
+    .in('status', ['processing', 'confirmed', 'pending'])
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  const results: Array<{ orderId: string; ok: boolean; error?: string }> = [];
+  for (const o of pending || []) {
+    try {
+      await pushOrderToShiprocket(o.id);
+      results.push({ orderId: o.id, ok: true });
+    } catch (err: any) {
+      console.error(`[Shiprocket] retry failed for ${o.order_number}:`, err?.message || err);
+      results.push({ orderId: o.id, ok: false, error: err?.message || 'push failed' });
+    }
+  }
+  return results;
+}
 
 export async function handleTransactionCancellation(orderId: string, orderStatus: string) {
   try {

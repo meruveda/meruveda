@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { orderService, returnService, reviewService } from "@/services/accountService";
+import { orderService, reviewService } from "@/services/accountService";
 import type { AccountOrder } from "@/types/account";
 import { DashboardCards, ProfileHeaderCard, QuickLinks, RecentOrders, type OverviewData } from "@/components/account/Overview";
 import { EditProfileModal } from "@/components/account/EditProfileModal";
@@ -12,7 +12,7 @@ export default function AccountOverviewPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<OverviewData>({ orders: [], returns: [], reviewCount: 0, pendingReviews: 0 });
+  const [data, setData] = useState<OverviewData>({ orders: [], reviewCount: 0, pendingReviews: 0 });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -22,7 +22,6 @@ export default function AccountOverviewPage() {
         orderService.myOrders().catch(() => [] as AccountOrder[]),
         reviewService.mine().catch(() => []),
       ]);
-      const localReturns = returnService.list();
       const deliveredItems = new Set<string>();
       for (const o of orders) {
         if (o.normalizedStatus !== "delivered") continue;
@@ -33,7 +32,7 @@ export default function AccountOverviewPage() {
       deliveredItems.forEach((id) => {
         if (!reviewedIds.has(id)) pending += 1;
       });
-      setData({ orders, returns: localReturns, reviewCount: myReviews.length, pendingReviews: pending });
+      setData({ orders, reviewCount: myReviews.length, pendingReviews: pending });
     } catch (e) {
       setError((e as Error)?.message || "Could not load your dashboard.");
     } finally {
@@ -49,7 +48,7 @@ export default function AccountOverviewPage() {
     <div className="space-y-5">
       <SectionHeader
         title="My Account"
-        subtitle="Orders, returns, reviews and settings — everything in one place."
+        subtitle="Orders, reviews and settings — everything in one place."
         action={
           <Link href="/account/track" className="text-xs font-bold text-gold hover:underline whitespace-nowrap">
             Track a package →

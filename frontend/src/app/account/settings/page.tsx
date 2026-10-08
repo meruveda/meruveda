@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Eye, EyeOff, Loader2, Lock, LogOut, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { Bell, Eye, EyeOff, Loader2, Lock, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { isValidEmail, isValidPhone } from "@/types/account";
 import { ConfirmDialog, Notice } from "@/components/account/ui";
@@ -10,7 +10,6 @@ import { ConfirmDialog, Notice } from "@/components/account/ui";
 type Prefs = {
   orderUpdates: boolean;
   deliveryUpdates: boolean;
-  returnUpdates: boolean;
   promo: boolean;
   email: boolean;
   whatsapp: boolean;
@@ -19,7 +18,6 @@ type Prefs = {
 const DEFAULT_PREFS: Prefs = {
   orderUpdates: true,
   deliveryUpdates: true,
-  returnUpdates: true,
   promo: true,
   email: true,
   whatsapp: true,
@@ -60,7 +58,6 @@ export default function SettingsPage() {
 
   const [notice, setNotice] = useState<{ tone: "success" | "error" | "info"; msg: string } | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (user?.role === "admin") {
@@ -79,7 +76,6 @@ export default function SettingsPage() {
         setPrefs({
           orderUpdates: d.orderUpdates ?? d.smsOrder ?? true,
           deliveryUpdates: d.deliveryUpdates ?? d.whatsappAlerts ?? true,
-          returnUpdates: d.returnUpdates ?? true,
           promo: d.promo ?? d.emailPromo ?? true,
           email: d.email ?? d.emailNewsletter ?? d.emailPromo ?? true,
           whatsapp: d.whatsapp ?? d.whatsappAlerts ?? true,
@@ -262,7 +258,6 @@ export default function SettingsPage() {
           <div className="space-y-4 max-w-xl divide-y divide-gray-50">
             <Toggle on={prefs.orderUpdates} onFlip={() => flipPref("orderUpdates")} label="Order updates" blurb="Placed, confirmed, shipped and delivered alerts." />
             <Toggle on={prefs.deliveryUpdates} onFlip={() => flipPref("deliveryUpdates")} label="Delivery updates" blurb="Out-for-delivery and delay notices." />
-            <Toggle on={prefs.returnUpdates} onFlip={() => flipPref("returnUpdates")} label="Return / refund updates" blurb="Pickup slots, quality checks and refund credits." />
             <Toggle on={prefs.promo} onFlip={() => flipPref("promo")} label="Promotional notifications" blurb="Offers, launches and festive sales." />
             <Toggle on={prefs.email} onFlip={() => flipPref("email")} label="Email notifications" blurb="Order mail, invoices and the Ayurvedic journal." />
             <Toggle on={prefs.whatsapp} onFlip={() => flipPref("whatsapp")} label="WhatsApp / SMS notifications" blurb="Tracking and support messages on your phone." />
@@ -282,9 +277,6 @@ export default function SettingsPage() {
           <button onClick={() => setConfirmLogout(true)} className="flex items-center gap-2 px-5 py-2.5 border border-gray-200 hover:bg-gray-50 rounded-lg text-xs font-bold text-gray-700">
             <LogOut size={14} /> Log out this device
           </button>
-          <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-2 px-5 py-2.5 border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold">
-            <Trash2 size={14} /> Request account deletion
-          </button>
         </div>
       </section>
 
@@ -298,27 +290,6 @@ export default function SettingsPage() {
           router.push("/");
         }}
         onClose={() => setConfirmLogout(false)}
-      />
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Request account deletion?"
-        message="This sends a deletion request to our support team. Your orders needed for invoices are retained as required by law."
-        confirmLabel="Send Request"
-        onConfirm={async () => {
-          try {
-            const { default: axiosInstance } = await import("@/api/axiosInstance");
-            await axiosInstance.post("/support", {
-              subject: "[Privacy] Delete my account",
-              message: `Please delete the account for ${user?.email || user?.phone || user?.id}.`,
-              priority: "high",
-            });
-            say("info", "Deletion request sent to support. We will confirm by email/SMS.");
-          } catch {
-            say("error", "Could not send the request. Please contact support.");
-          }
-          setConfirmDelete(false);
-        }}
-        onClose={() => setConfirmDelete(false)}
       />
     </div>
   );

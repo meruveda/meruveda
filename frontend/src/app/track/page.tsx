@@ -63,18 +63,51 @@ function isStepDone(step: (typeof STATUS_STEPS)[number], order: TrackingResult, 
 }
 
 export default function TrackOrderPage() {
+  const [mode, setMode] = useState<"order" | "awb">("order");
   const [orderRef, setOrderRef] = useState("");
   const [phone, setPhone] = useState("");
+  const [awb, setAwb] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TrackingResult | null>(null);
+  const [liveAwb, setLiveAwb] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setResult(null);
+    setLiveAwb(false);
     setLoading(true);
     try {
+      if (mode === "awb") {
+        const code = awb.trim();
+        if (!code) {
+          setError("Please enter a tracking ID (AWB).");
+          return;
+        }
+        const response = await axiosInstance.get("/orders/track-awb", {
+          params: { awb: code },
+        });
+        const d = response.data?.data;
+        if (!d) {
+          setError("No shipment found for this tracking ID. Check the AWB and try again.");
+          return;
+        }
+        setLiveAwb(true);
+        setResult({
+          order_number: d.awb_code || code,
+          status: d.current_status || d.status || "In Transit",
+          awb_code: d.awb_code || code,
+          courier_name: d.courier_name,
+          tracking_url: d.tracking_url,
+          tracking_status: d.tracking_status || d.current_status,
+          estimated_delivery: d.estimated_delivery,
+          last_tracking_update: null,
+          created_at: new Date().toISOString(),
+          tracking_history: d.tracking_history || [],
+        } as TrackingResult);
+        return;
+      }
       const response = await axiosInstance.get("/orders/track", {
         params: { order: orderRef.trim(), phone: phone.trim() },
       });
@@ -101,14 +134,49 @@ export default function TrackOrderPage() {
       <div className="text-center mb-10">
         <h1 className="text-4xl font-playfair font-bold text-deep-purple mb-3">Track Your Order</h1>
         <p className="text-gray-600">
-          Enter your order number and the mobile number used at checkout. No login required.
+          {mode === "awb"
+            ? "Enter your tracking ID (AWB) for live courier status. No login required."
+            : "Enter your order number and the mobile number used at checkout. No login required."}
         </p>
+        <div className="inline-flex mt-5 bg-gray-100 rounded-full p-1 text-sm font-semibold">
+          <button
+            type="button"
+            onClick={() => { setMode("order"); setError(null); setResult(null); }}
+            className={`px-5 py-2 rounded-full transition ${mode === "order" ? "bg-white shadow text-deep-purple" : "text-gray-500"}`}
+          >
+            Order + Mobile
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode("awb"); setError(null); setResult(null); }}
+            className={`px-5 py-2 rounded-full transition ${mode === "awb" ? "bg-white shadow text-deep-purple" : "text-gray-500"}`}
+          >
+            Tracking ID (AWB)
+          </button>
+        </div>
       </div>
 
       <form
         onSubmit={handleSubmit}
         className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 md:p-8 space-y-5"
       >
+        {mode === "awb" ? (
+          <div>
+            <label htmlFor="awb" className="block text-sm font-semibold text-deep-purple mb-2">
+              Tracking ID (AWB)
+            </label>
+            <input
+              id="awb"
+              type="text"
+              required
+              value={awb}
+              onChange={(e) => setAwb(e.target.value)}
+              placeholder="e.g. 123456789012"
+              className="w-full h-12 px-4 rounded-lg border border-gray-300 focus:border-gold focus:ring-2 focus:ring-gold/30 outline-none transition font-mono"
+            />
+            <p className="text-xs text-gray-500 mt-2">Find it in your shipping confirmation SMS / email or invoice.</p>
+          </div>
+        ) : (
         <div className="grid sm:grid-cols-2 gap-5">
           <div>
             <label htmlFor="orderRef" className="block text-sm font-semibold text-deep-purple mb-2">
@@ -139,6 +207,7 @@ export default function TrackOrderPage() {
             />
           </div>
         </div>
+        )}
 
         <button
           type="submit"
@@ -146,7 +215,7 @@ export default function TrackOrderPage() {
           className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-12 px-8 bg-gold text-deep-purple font-bold rounded-lg hover:bg-gold-light transition-colors disabled:opacity-60"
         >
           {loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
-          {loading ? "Searching..." : "Track Order"}
+          {loading ? "Searching..." : mode === "awb" ? "Track Shipment" : "Track Order"}
         </button>
 
         {error && (
@@ -179,7 +248,7 @@ export default function TrackOrderPage() {
             <span
               className={`px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(result.status)}`}
             >
-              {result.status}
+              {result.status}{liveAwb ? " · Live" : ""}
             </span>
           </div>
 
