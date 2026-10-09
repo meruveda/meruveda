@@ -123,22 +123,45 @@ export const ProductsPage: React.FC = () => {
     }
   }
 
-  // Simple Mock CSV Export
-  const exportToCSV = () => {
-    const headers = 'ID,Name,SKU,MRP,Selling Price,Stock,Category,Status\n'
-    const rows = products
-      .map(
-        (p) =>
-          `"${p.id}","${p.name}","${p.sku}",${p.mrp},${p.sellingPrice},${p.stock},"${p.categoryName}","${p.status}"`
-      )
-      .join('\n')
-    const blob = new Blob([headers + rows], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.setAttribute('href', url)
-    a.setAttribute('download', `MeruVeda_Products_${Date.now()}.csv`)
-    a.click()
-    toast.success('Products exported to CSV!')
+  // Export the full filtered catalog (not just the visible page) as .xlsx
+  const [isExporting, setIsExporting] = useState(false)
+  const exportToExcel = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const all = await productService.getAllProducts({
+        search: search.trim() || undefined,
+        categoryId: categoryId || undefined,
+        status: status || undefined,
+      })
+      if (all.length === 0) {
+        toast.error('No products to export')
+        return
+      }
+      const rows = all.map((p) => ({
+        ID: p.id,
+        Name: p.name,
+        SKU: p.sku,
+        Brand: p.brand || '',
+        Category: p.categoryName || '',
+        MRP: p.mrp,
+        'Selling Price': p.sellingPrice,
+        'Discount %': p.discount,
+        Stock: p.stock,
+        'GST %': p.gst ?? p.gst_rate ?? p.gstRate ?? '',
+        'HSN Code': p.hsn || p.hsn_code || p.hsnCode || '',
+        Status: p.status,
+        'Stock Status': p.stockStatus,
+      }))
+      const { writeWorkbook, excelFileName } = await import('../../utils/exportExcel')
+      await writeWorkbook({ Products: rows }, excelFileName('MeruVeda_Products'))
+      toast.success(`Exported ${all.length} products to Excel!`)
+    } catch (err) {
+      console.error('Products Excel export failed', err)
+      toast.error('Failed to export products')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   // Simple Mock CSV Import trigger
@@ -155,7 +178,15 @@ export const ProductsPage: React.FC = () => {
           <p className="text-sm text-slate-500">Manage products pricing, stock, attributes, and categories.</p>
         </div>
         <div className="flex gap-2">
-
+          <button
+            type="button"
+            onClick={exportToExcel}
+            disabled={isExporting}
+            className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl disabled:opacity-50"
+          >
+            {isExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {isExporting ? 'Preparing…' : 'Export Excel'}
+          </button>
           <Link
             to="/products/add"
             className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl shadow-glow"

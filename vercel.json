@@ -65,6 +65,10 @@
     {
       "path": "/api/jobs/review-requests",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/orders/retry-shiprocket-failed?limit=20",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

@@ -83,8 +83,8 @@ export const initiatePayUPayment = async (req: Request, res: Response, next: Nex
       amount: Number(order.total),
       productInfo,
       firstName,
-      email: req.user?.email || 'customer@meruveda.com',
-      phone: shippingAddress.phone || '9999999999',
+      email: checkoutPayload.customerEmail || checkoutPayload.email || req.user?.email || 'customer@meruveda.com',
+      phone: shippingAddress.phone || checkoutPayload.customerPhone || checkoutPayload.phone || '9999999999',
       backendUrl
     });
 
@@ -135,7 +135,7 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
       return res.redirect(`${storefrontBaseUrl(req)}/checkout/success/${order.id}`);
     }
 
-    const upsertTransaction = async (txStatus: 'success' | 'failed', detailedStatus: 'captured' | 'failed' | 'hash_mismatch', gatewayRef?: string) => {
+    const upsertTransaction = async (txStatus: 'success' | 'failed', detailedStatus: 'captured' | 'failed' | 'hash_mismatch' | 'amount_mismatch', gatewayRef?: string, extraMeta?: Record<string, unknown>) => {
       try {
         const { data: existingTx } = await supabase
           .from('transactions')
@@ -154,7 +154,10 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
           metadata: {
             detailed_status: detailedStatus,
             gateway_mode: payload.mode || null,
-            updated_at: new Date().toISOString()
+            expected_amount: Number(order.total),
+            charged_amount: payload.amount !== undefined ? Number(payload.amount) : null,
+            updated_at: new Date().toISOString(),
+            ...(extraMeta || {}),
           }
         };
 
@@ -187,6 +190,21 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
     }
 
     if (status === 'success') {
+      // Amount check: never mark paid when PayU charged something different.
+      const charged = payload.amount !== undefined ? Number(payload.amount) : NaN;
+      const expected = Number(order.total);
+      if (!Number.isFinite(charged) || charged.toFixed(2) !== expected.toFixed(2)) {
+        console.error(`[PayU Callback] Amount mismatch for ${orderNumber}: charged=${payload.amount} expected=${order.total}`);
+        await supabase.from('orders').update({
+          status: 'payment_failed',
+          notes: `${order.notes || ''} [PayU Error: Amount mismatch charged=${payload.amount} expected=${order.total}]`.trim()
+        }).eq('id', order.id);
+
+        await upsertTransaction('failed', 'amount_mismatch');
+
+        return res.redirect(`${storefrontBaseUrl(req)}/checkout/failed?order_id=${order.id}&reason=${encodeURIComponent('Payment amount mismatch. Please contact support if money was deducted.')}`);
+      }
+
       // Mark as paid / processing
       await supabase.from('orders').update({
         status: 'processing',

@@ -49,113 +49,63 @@ export const AnalyticsPage: React.FC = () => {
   const handleExportExcel = async () => {
     const toastId = toast.loading('Generating Excel audit report...')
     try {
-      const orders = await orderService.getOrders({ includeItems: 'true', limit: 500 })
-      
-      // Build CSV lines
-      const csvRows = []
-      
-      // Section 1: Title & metadata
-      csvRows.push('MeruVeda Platform - Sales Audit Report')
-      csvRows.push(`Export Date,${new Date().toLocaleString()}`)
-      csvRows.push('')
-      
-      // Section 2: Order Line Items
-      csvRows.push('ORDER LINE ITEMS')
-      csvRows.push('Order Number,Order Date,Customer,SKU,Product Name,Quantity,Unit Price,Discount,Line Total,Payment Status,Payment Method')
-      
-      if (Array.isArray(orders)) {
-        orders.forEach((order: any) => {
-          const orderDate = new Date(order.createdAt || order.created_at).toLocaleDateString()
-          const customerName = order.shippingAddress?.firstName 
-            ? `${order.shippingAddress.firstName} ${order.shippingAddress.lastName || ''}`.trim()
-            : order.customerName || 'Customer'
-            
-          if (order.orderItems && Array.isArray(order.orderItems)) {
-            order.orderItems.forEach((item: any) => {
-              const prod = item.products || {}
-              const sku = prod.sku || 'N/A'
-              const prodName = prod.name || 'N/A'
-              const qty = item.quantity || 0
-              const unitPrice = item.priceAtPurchase || item.price || 0
-              const discount = order.discount || 0
-              const lineTotal = qty * unitPrice
-              const payStatus = order.status || 'Pending'
-              const payMethod = order.paymentMethod || order.payment_method || 'N/A'
-              
-              // Escape values for CSV
-              const escapedProdName = `"${prodName.replace(/"/g, '""')}"`
-              const escapedCustName = `"${customerName.replace(/"/g, '""')}"`
-              
-              csvRows.push([
-                order.orderNumber || order.order_number,
-                orderDate,
-                escapedCustName,
-                sku,
-                escapedProdName,
-                qty,
-                unitPrice,
-                discount,
-                lineTotal,
-                payStatus,
-                payMethod
-              ].join(','))
-            })
-          }
-        })
+      const orders = await orderService.getAllOrders({ includeItems: 'true' })
+
+      if (!orders || orders.length === 0) {
+        toast.dismiss(toastId)
+        toast.error('No orders found to export')
+        return
       }
-      
-      csvRows.push('')
-      csvRows.push('')
-      
-      // Section 3: Summary Sheet (Aggregate product sales)
-      csvRows.push('PRODUCT PERFORMANCE SUMMARY')
-      csvRows.push('Product Name,SKU,Total Units Sold,Total Revenue')
-      
+
+      // Sheet 1: one row per order line item (uses the mapped camelCase shape).
+      const lineRows: Record<string, string | number>[] = []
       const productSummary: Record<string, { name: string; sku: string; qty: number; revenue: number }> = {}
-      if (Array.isArray(orders)) {
-        orders.forEach((order: any) => {
-          if (order.orderItems && Array.isArray(order.orderItems)) {
-            order.orderItems.forEach((item: any) => {
-              const prod = item.products || {}
-              const sku = prod.sku || 'N/A'
-              const prodName = prod.name || 'N/A'
-              const qty = item.quantity || 0
-              const unitPrice = item.priceAtPurchase || item.price || 0
-              const lineTotal = qty * unitPrice
-              
-              if (!productSummary[sku]) {
-                productSummary[sku] = { name: prodName, sku, qty: 0, revenue: 0 }
-              }
-              productSummary[sku].qty += qty
-              productSummary[sku].revenue += lineTotal
-            })
+
+      orders.forEach((order: any) => {
+        const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString() : ''
+        const customerName = order.shippingAddress?.fullName || order.customerName || 'Customer'
+        const items = Array.isArray(order.items) ? order.items : []
+        items.forEach((item: any) => {
+          const qty = Number(item.quantity || 0)
+          const unitPrice = Number(item.price || 0)
+          lineRows.push({
+            'Order Number': order.orderNumber || '',
+            'Order Date': orderDate,
+            Customer: customerName,
+            SKU: item.sku || '',
+            'Product Name': item.productName || '',
+            Quantity: qty,
+            'Unit Price': unitPrice,
+            Discount: Number(order.discount || 0),
+            'Line Total': qty * unitPrice,
+            'Payment Status': order.paymentStatus || '',
+            'Payment Method': order.paymentMethod || '',
+            'Order Status': order.status || '',
+          })
+          const key = item.sku || item.productName || 'UNKNOWN'
+          if (!productSummary[key]) {
+            productSummary[key] = { name: item.productName || 'N/A', sku: item.sku || 'N/A', qty: 0, revenue: 0 }
           }
+          productSummary[key].qty += qty
+          productSummary[key].revenue += qty * unitPrice
         })
-      }
-      
-      Object.values(productSummary).forEach((summary) => {
-        const escapedProdName = `"${summary.name.replace(/"/g, '""')}"`
-        csvRows.push([
-          escapedProdName,
-          summary.sku,
-          summary.qty,
-          summary.revenue
-        ].join(','))
       })
 
-      // Convert to blob and download with UTF-8 BOM
-      const csvString = csvRows.join('\n')
-      const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvString], { type: 'text/csv;charset=utf-8;' })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.setAttribute('href', url)
-      link.setAttribute('download', `MeruVeda_Sales_Audit_Report_${Date.now()}.csv`)
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      
+      const summaryRows = Object.values(productSummary).map((s) => ({
+        'Product Name': s.name,
+        SKU: s.sku,
+        'Total Units Sold': s.qty,
+        'Total Revenue': s.revenue,
+      }))
+
+      const { writeWorkbook, excelFileName } = await import('../../utils/exportExcel')
+      await writeWorkbook(
+        { 'Line Items': lineRows, 'Product Summary': summaryRows },
+        excelFileName('MeruVeda_Sales_Audit_Report'),
+      )
+
       toast.dismiss(toastId)
-      toast.success('Excel Sheet audit report downloaded successfully!')
+      toast.success('Excel audit report downloaded successfully!')
     } catch (error) {
       console.error(error)
       toast.dismiss(toastId)

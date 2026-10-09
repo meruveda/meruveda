@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { ShoppingCart, Search, Eye, Filter, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ShoppingCart, Search, Eye, Filter, RefreshCw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { orderService } from '../../services/orderService'
 import { Order, OrderStatus } from '../../types'
 import { formatCurrency, formatDateTime } from '@meruveda/shared'
@@ -10,6 +10,7 @@ import toast from 'react-hot-toast'
 export const OrdersPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isExporting, setIsExporting] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
 
@@ -55,12 +56,66 @@ export const OrdersPage: React.FC = () => {
     'refunded',
   ]
 
+  /** Export all filtered orders (page-walked) as a real .xlsx workbook. */
+  const handleExport = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const all = await orderService.getAllOrders({
+        search: search.trim() || undefined,
+        status: status || undefined,
+        paymentMethod: paymentMethod || undefined,
+        includeItems: 'true',
+      })
+      if (all.length === 0) {
+        toast.error('There are no orders to export')
+        return
+      }
+      const rows = all.map((o) => ({
+        'Order Number': o.orderNumber,
+        'Order Date': o.createdAt ? new Date(o.createdAt).toLocaleString() : '',
+        Customer: o.customerName,
+        Email: o.customerEmail,
+        Phone: o.customerPhone,
+        Items: o.items.map((i) => `${i.productName} x${i.quantity}`).join(' | '),
+        Subtotal: o.subtotal,
+        Discount: o.discount,
+        Tax: o.tax,
+        Shipping: o.shippingCharge,
+        Total: o.total,
+        'Payment Method': o.paymentMethod,
+        'Payment Status': o.paymentStatus,
+        Status: o.status,
+        'Tracking Number': o.trackingNumber || o.awbCode || '',
+      }))
+      const { writeWorkbook, excelFileName } = await import('../../utils/exportExcel')
+      await writeWorkbook({ Orders: rows }, excelFileName('meruveda-orders'))
+      toast.success(`Exported ${all.length} orders to Excel`)
+    } catch (err) {
+      console.error('Orders Excel export failed', err)
+      toast.error('Failed to export orders')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Title */}
-      <div>
-        <h1 className="page-title">Orders Management</h1>
-        <p className="text-sm text-slate-500">View order timelines, update fulfillment status, and generate invoices.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="page-title">Orders Management</h1>
+          <p className="text-sm text-slate-500">View order timelines, update fulfillment status, and generate invoices.</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={isLoading || isExporting}
+          className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl disabled:opacity-50"
+        >
+          {isExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {isExporting ? 'Preparing…' : 'Export Excel'}
+        </button>
       </div>
 
       {/* Filters bar */}

@@ -36,6 +36,7 @@ export const OrderDetailPage: React.FC = () => {
   const [isSchedulingPickup, setIsSchedulingPickup] = useState(false)
   const [isDownloadingLabel, setIsDownloadingLabel] = useState(false)
   const [isDownloadingInvoice, setIsDownloadingInvoice] = useState(false)
+  const [isResendingInvoice, setIsResendingInvoice] = useState(false)
   const [isRefreshingTracking, setIsRefreshingTracking] = useState(false)
   const [isCancellingOrder, setIsCancellingOrder] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -132,6 +133,19 @@ export const OrderDetailPage: React.FC = () => {
       toast.error(err?.message || 'Failed to download invoice');
     } finally {
       setIsDownloadingInvoice(false);
+    }
+  }
+
+  const handleResendInvoice = async () => {
+    if (!order) return;
+    setIsResendingInvoice(true);
+    try {
+      await orderService.resendInvoice(order.id);
+      toast.success('Invoice resent over WhatsApp');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || err?.message || 'Failed to resend invoice');
+    } finally {
+      setIsResendingInvoice(false);
     }
   }
 
@@ -521,6 +535,14 @@ export const OrderDetailPage: React.FC = () => {
                     onClick={handleDownloadInvoice}
                   >
                     {isDownloadingInvoice ? 'Downloading...' : 'Invoice PDF'}
+                  </button>
+                  <button
+                    disabled={isResendingInvoice}
+                    className="btn-outline text-xs py-1.5 justify-center"
+                    onClick={handleResendInvoice}
+                    title="Resend the PDF invoice over WhatsApp"
+                  >
+                    {isResendingInvoice ? 'Sending...' : 'Resend Invoice'}
                   </button>
                   <button
                     disabled={!(order as any).awb_code || isRefreshingTracking}

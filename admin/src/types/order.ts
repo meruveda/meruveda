@@ -18,6 +18,8 @@ export interface OrderItem {
   mrp: number
   price: number
   discount: number
+  hsn?: string
+  gst?: number
 }
 
 export interface ShippingAddress {

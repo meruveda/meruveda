@@ -13,6 +13,8 @@ router.get('/track-awb', trackByAwb as any);
 // Retry for failed Shiprocket pushes. Mounted BEFORE requireAuth so Vercel
 // Cron (Authorization: Bearer CRON_SECRET, no user JWT) can reach it; the
 // controller authorizes cron-secret OR admin itself.
+// Vercel Cron always issues GET, admin tooling uses POST — support both.
+router.get('/retry-shiprocket-failed', retryShiprocketPushes as any);
 router.post('/retry-shiprocket-failed', retryShiprocketPushes as any);
 
 router.use(requireAuth as any);

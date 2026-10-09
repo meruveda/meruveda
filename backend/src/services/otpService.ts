@@ -4,6 +4,7 @@ import { supabase } from '../database/supabase';
 import { config } from '../config/env';
 import { hasColumn, hasTable } from './schemaGuard';
 import { normalizePhone, sendOnce, WHATSAPP_TEMPLATES, sendTemplate } from './whatsappService';
+import { canonicalPhone, phoneVariants, placeholderEmailFor } from '../utils/phone';
 
 const OTP_TTL_MINUTES = 5;
 const OTP_MAX_ATTEMPTS = 5;
@@ -142,12 +143,16 @@ export const otpService = {
    * Returns the user row (snake_case) ready for JWT issue.
    */
   async findOrCreateUserByPhone(phoneRaw: string, name?: string) {
-    const phone = normalizePhone(phoneRaw);
+    const phone = canonicalPhone(phoneRaw) || normalizePhone(phoneRaw);
+    if (!phone) throw Object.assign(new Error('Please enter a valid mobile number.'), { status: 400 });
+
+    const variants = phoneVariants(phoneRaw);
+    const lookup = variants.length > 0 ? variants : [phone];
 
     const { data: existing } = await supabase
       .from('users')
       .select('*')
-      .eq('phone', phone)
+      .in('phone', lookup)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -170,7 +175,7 @@ export const otpService = {
 
     // users.email / password_hash are NOT NULL + UNIQUE in the base schema, so a
     // phone-only customer gets a deterministic placeholder identity.
-    const placeholderEmail = `${phone}@meruveda.whatsapp`;
+    const placeholderEmail = placeholderEmailFor(phone);
     const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
     const [firstName, ...rest] = (name || '').trim().split(/\s+/);
 
@@ -196,7 +201,7 @@ export const otpService = {
     if (error) {
       // UNIQUE violation = a racing request created it first; re-read.
       if (error.code === '23505') {
-        const { data: retry } = await supabase.from('users').select('*').eq('phone', phone).limit(1);
+        const { data: retry } = await supabase.from('users').select('*').in('phone', lookup).limit(1);
         if (retry && retry[0]) return { user: retry[0], created: false };
       }
       throw error;

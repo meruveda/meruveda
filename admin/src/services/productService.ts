@@ -1,9 +1,32 @@
 import { apiClient } from '../api/apiClient';
+import axiosInstance from '../api/axiosInstance';
 import { Product, ProductFilters, PaginationParams } from '../types';
 
 class ProductService {
   async getProducts(params?: ProductFilters & PaginationParams): Promise<Product[]> {
     return apiClient.get('/products', { params });
+  }
+
+  /** Walks every page so exports never silently cap at the first page. */
+  async getAllProducts(params?: ProductFilters): Promise<Product[]> {
+    const limit = 200;
+    const all: Product[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+      const response = await axiosInstance.get('/products', {
+        params: { page, limit, ...params },
+      });
+      const body = response.data || {};
+      const rows = Array.isArray(body) ? body : body.data || [];
+      all.push(...rows);
+      totalPages = body.totalPages || 1;
+      if (rows.length === 0) break;
+      page += 1;
+    } while (page <= totalPages);
+
+    return all;
   }
 
   async getProductById(id: string): Promise<Product> {

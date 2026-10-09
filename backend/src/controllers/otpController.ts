@@ -3,6 +3,7 @@ import { supabase } from '../database/supabase';
 import { generateToken } from '../utils/jwt';
 import { otpService } from '../services/otpService';
 import { normalizePhone, isWhatsappConfigured } from '../services/whatsappService';
+import { canonicalPhone, isPlaceholderEmail, isValidEmail } from '../utils/phone';
 import { config } from '../config/env';
 
 const MESSAGES: Record<string, string> = {
@@ -119,12 +120,15 @@ export const updateCheckoutProfile = async (req: Request, res: Response, next: N
     if (persistAddress) patch.address = address;
 
     if (phone) {
-      const normalized = normalizePhone(phone);
+      const normalized = canonicalPhone(phone) || normalizePhone(phone);
       if (normalized) patch.phone = normalized;
     }
 
     if (email) {
       const cleanEmail = String(email).trim();
+      if (!isValidEmail(cleanEmail) || isPlaceholderEmail(cleanEmail)) {
+        return res.status(400).json({ error: { message: 'Please enter a valid email address' } });
+      }
       // Only adopt the email if nobody else already owns it (users.email is UNIQUE).
       const { data: owner } = await supabase
         .from('users')

@@ -40,7 +40,10 @@ export function normalizePhone(raw?: string | null): string {
   if (!raw) return '';
   let digits = String(raw).replace(/\D/g, '');
   if (!digits) return '';
-  if (digits.length === 12 && digits.startsWith('0')) digits = digits.slice(1);
+  // International "00" prefix (e.g. 0091...) -> strip to national form first.
+  if (digits.length === 13 && digits.startsWith('00')) digits = digits.slice(2);
+  // 12-digit with country code (91XXXXXXXXXX) is already canonical.
+  if (digits.length === 12 && digits.startsWith('91')) return digits;
   if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
   if (digits.length === 10) digits = `91${digits}`;
   return digits;

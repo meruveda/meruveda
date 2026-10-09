@@ -38,77 +38,58 @@ export const TransactionsPage: React.FC = () => {
     fetchTransactions()
   }, [type, startDate, endDate])
 
-  const exportCSV = () => {
-    if (txns.length === 0) {
-      toast.error('No transactions to export.')
-      return
+  const exportCSV = async () => {
+    const toastId = toast.loading('Preparing transactions Excel report...')
+    try {
+      const all = await transactionService.getAllTransactions({
+        ...(type ? { type } : {}),
+        ...(startDate ? { startDate: new Date(startDate).toISOString() } : {}),
+        ...(endDate ? { endDate: new Date(endDate).toISOString() } : {}),
+      })
+      if (all.length === 0) {
+        toast.dismiss(toastId)
+        toast.error('No transactions to export.')
+        return
+      }
+
+      const rows = all.map((t) => ({
+        'Transaction ID': t.id,
+        'Order Number': t.orderNumber,
+        Type: t.type,
+        'Payment Method': t.method,
+        'Gateway Reference': t.gatewayRef || '',
+        Amount: t.amount,
+        Timestamp: t.createdAt,
+        Status: t.status,
+      }))
+
+      const { writeWorkbook, excelFileName } = await import('../../utils/exportExcel')
+      await writeWorkbook({ Transactions: rows }, excelFileName('transactions_export'))
+
+      toast.dismiss(toastId)
+      toast.success('Transactions Excel report exported successfully!')
+    } catch (err) {
+      toast.dismiss(toastId)
+      toast.error('Failed to export transactions.')
+      console.error(err)
     }
-
-    const headers = ['Transaction ID', 'Order Number', 'Type', 'Payment Method', 'Gateway Reference', 'Amount', 'Timestamp', 'Status']
-    const rows = txns.map(t => [
-      t.id,
-      t.orderNumber,
-      t.type,
-      t.method,
-      t.gatewayRef || '',
-      t.amount.toString(),
-      t.createdAt,
-      t.status
-    ])
-
-    const csvContent = [headers.join(','), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.setAttribute('href', url)
-    link.setAttribute('download', `transactions_export_${new Date().toISOString().slice(0, 10)}.csv`)
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-
-    toast.success('Transactions CSV report exported successfully!')
   }
 
   const exportGSTReport = async () => {
     const toastId = toast.loading('Preparing CA-Ready GST Report...')
     try {
-      // Fetch all orders with items for the selected date range
-      const params: any = {
-        includeItems: 'true',
-        limit: 10000,
-        sortBy: 'created_at',
-        sortOrder: 'desc'
-      }
+      // Fetch ALL orders for the selected date range (page-walked, not capped).
+      const params: Record<string, string> = { includeItems: 'true' }
       if (startDate) params.startDate = new Date(startDate).toISOString()
       if (endDate) params.endDate = new Date(endDate).toISOString()
 
-      const orders = await orderService.getOrders(params)
+      const orders = await orderService.getAllOrders(params)
 
       if (!orders || orders.length === 0) {
         toast.dismiss(toastId)
         toast.error('No orders found for the selected date range.')
         return
       }
-
-      const headers = [
-        'Invoice Number',
-        'Invoice Date',
-        'Order Number',
-        'Customer Name',
-        'Customer State',
-        'Product Name(s)',
-        'HSN/SAC Code(s)',
-        'Taxable Value (INR)',
-        'GST Rate (%)',
-        'CGST Amount (INR)',
-        'SGST Amount (INR)',
-        'IGST Amount (INR)',
-        'Shipping Charges (INR)',
-        'Total Invoice Value (INR)',
-        'Payment Status',
-        'Payment Method'
-      ]
 
       const COMPANY_GSTIN = COMPANY_CONFIG.gstin || 'GSTIN_PENDING'
 
@@ -118,60 +99,58 @@ export const TransactionsPage: React.FC = () => {
         const validMatches = ['rajasthan', 'rj', 'rajsthan', 'rajasthn', 'rajastan', 'rajasthna', 'rajastran', 'raj']
         const isIntraState = validMatches.includes(s) || (s.startsWith('raj') && s.length >= 5)
 
-        const customerName = order.customerName || 'Guest'
+        const customerName = order.shippingAddress?.fullName || order.customerName || 'Guest'
         const invoiceNum = order.orderNumber
-        const invoiceDate = new Date(order.createdAt).toLocaleDateString()
-        
-        const productNames = order.items.map((item: any) => item.productName || 'Unknown Product').join(' | ')
-        const hsnCodes = order.items.map((item: any) => item.hsn || item.hsn_code || item.hsnCode || '').filter(Boolean).join(' | ') || 'N/A'
+        const invoiceDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString() : ''
+
+        const items = Array.isArray(order.items) ? order.items : []
+        const productNames = items.map((item: any) => item.productName || 'Unknown Product').join(' | ') || 'N/A'
+        const hsnCodes = items.map((item: any) => item.hsn || '').filter(Boolean).join(' | ') || 'N/A'
 
         const taxableValue = Number(order.subtotal || 0) - Number(order.discount || 0)
-        
-        const uniqueRates = Array.from(new Set(order.items.map((item: any) => item.gst || item.gst_rate || 5)))
-        const gstRateStr = uniqueRates.join('% & ') + '%'
+
+        const uniqueRates = Array.from(new Set(items.map((item: any) => Number(item.gst ?? 5))))
+        const gstRateStr = uniqueRates.length > 0 ? uniqueRates.join('% & ') + '%' : '5%'
 
         const totalTax = Number(order.tax || 0)
-        const cgst = isIntraState ? (totalTax / 2) : 0
-        const sgst = isIntraState ? (totalTax / 2) : 0
+        const cgst = isIntraState ? totalTax / 2 : 0
+        const sgst = isIntraState ? totalTax / 2 : 0
         const igst = isIntraState ? 0 : totalTax
 
-        return [
-          invoiceNum,
-          invoiceDate,
-          order.orderNumber,
-          customerName,
-          state || 'N/A',
-          productNames,
-          hsnCodes,
-          taxableValue.toFixed(2),
-          gstRateStr,
-          cgst.toFixed(2),
-          sgst.toFixed(2),
-          igst.toFixed(2),
-          Number(order.shippingCharge || 0).toFixed(2),
-          Number(order.total || 0).toFixed(2),
-          order.paymentStatus || 'N/A',
-          order.paymentMethod || 'N/A'
-        ]
+        return {
+          'Invoice Number': invoiceNum,
+          'Invoice Date': invoiceDate,
+          'Order Number': order.orderNumber,
+          'Customer Name': customerName,
+          'Customer State': state || 'N/A',
+          'Product Name(s)': productNames,
+          'HSN/SAC Code(s)': hsnCodes,
+          'Taxable Value (INR)': Number(taxableValue.toFixed(2)),
+          'GST Rate (%)': gstRateStr,
+          'CGST Amount (INR)': Number(cgst.toFixed(2)),
+          'SGST Amount (INR)': Number(sgst.toFixed(2)),
+          'IGST Amount (INR)': Number(igst.toFixed(2)),
+          'Shipping Charges (INR)': Number(Number(order.shippingCharge || 0).toFixed(2)),
+          'Total Invoice Value (INR)': Number(Number(order.total || 0).toFixed(2)),
+          'Payment Status': order.paymentStatus || 'N/A',
+          'Payment Method': order.paymentMethod || 'N/A',
+        }
       })
 
-      const csvLines = [
-        `"MERUVEDA WELLNESS - GST REPORT","GSTIN: ${COMPANY_GSTIN}","Date Range: ${startDate || 'All'} to ${endDate || 'All'}"`,
-        `""`,
-        headers.join(','),
-        ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+      const metaRows = [
+        {
+          'Report': 'MERUVEDA WELLNESS - GST REPORT',
+          'GSTIN': COMPANY_GSTIN,
+          'Date Range': `${startDate || 'All'} to ${endDate || 'All'}`,
+          'Generated On': new Date().toLocaleString(),
+        },
       ]
 
-      const csvContent = csvLines.join('\n')
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.setAttribute('href', url)
-      link.setAttribute('download', `gstr1_report_${startDate || 'all'}_to_${endDate || 'all'}.csv`)
-      link.style.visibility = 'hidden'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      const { writeWorkbook } = await import('../../utils/exportExcel')
+      await writeWorkbook(
+        { 'GSTR-1': rows, 'Report Info': metaRows },
+        `gstr1_report_${startDate || 'all'}_to_${endDate || 'all'}.xlsx`,
+      )
 
       toast.dismiss(toastId)
       toast.success('GSTR-1 CA-Ready report exported successfully!')
@@ -195,13 +174,13 @@ export const TransactionsPage: React.FC = () => {
             onClick={exportCSV}
             className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl"
           >
-            Export CSV Report
+            Export Excel Report
           </button>
           <button
             onClick={exportGSTReport}
             className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl"
           >
-            Export GST Report
+            Export GST Report (Excel)
           </button>
         </div>
       </div>
