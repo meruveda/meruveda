@@ -10,6 +10,11 @@ router.get('/track', trackOrder as any);
 // PUBLIC — live tracking by AWB entered manually (Shiprocket live API).
 router.get('/track-awb', trackByAwb as any);
 
+// Retry for failed Shiprocket pushes. Mounted BEFORE requireAuth so Vercel
+// Cron (Authorization: Bearer CRON_SECRET, no user JWT) can reach it; the
+// controller authorizes cron-secret OR admin itself.
+router.post('/retry-shiprocket-failed', retryShiprocketPushes as any);
+
 router.use(requireAuth as any);
 
 router.get('/my', getMyOrders as any);
@@ -31,6 +36,5 @@ router.delete('/:id', requireAdmin as any, deleteOrder as any);
 // Manual fallback + retry for failed Shiprocket pushes (admin; retry also
 // accepts cron with Authorization: Bearer CRON_SECRET).
 router.post('/:id/push-shiprocket', requireAdmin as any, pushToShiprocket as any);
-router.post('/retry-shiprocket-failed', retryShiprocketPushes as any);
 
 export default router;

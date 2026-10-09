@@ -4,6 +4,7 @@ import { orderNotifyService } from '../services/orderNotifyService';
 import { supabase } from '../database/supabase';
 import { normalizePhone } from '../services/whatsappService';
 import { hasColumn } from '../services/schemaGuard';
+import { verifyToken } from '../utils/jwt';
 import { shiprocketTrackingService } from '../services/shiprocket/tracking.service';
 import { shiprocketWebhookService } from '../services/shiprocket/webhook.service';
 import { getOrderForInvoice, generateInvoicePdf } from '../services/invoiceService';
@@ -23,6 +24,10 @@ export const getOrderById = async (req: Request, res: Response, next: NextFuncti
   try {
     const { id } = req.params;
     const data = await orderService.getOrderById(id as string);
+    // Ownership check: shoppers may only fetch their own orders; admins any.
+    if (req.user?.role !== 'admin' && (data as any)?.user_id !== req.user?.id) {
+      return res.status(403).json({ error: { message: 'Forbidden' } });
+    }
     res.json({ data });
   } catch (error: any) {
     if (error.status === 404) {
@@ -265,13 +270,22 @@ export const pushToShiprocket = async (req: Request, res: Response, next: NextFu
   }
 };
 
-/** Retry failed pushes (admin or cron with CRON_SECRET). */
+/** Retry failed pushes (admin JWT or cron with CRON_SECRET — no user session needed). */
 export const retryShiprocketPushes = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cronSecret = process.env.CRON_SECRET;
     const authHeader = String(req.headers.authorization || '');
-    const isCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
-    if (req.user?.role !== 'admin' && !isCron) {
+    const isCron = !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+    // Optional admin JWT: this route sits before requireAuth so cron can pass.
+    let isAdmin = req.user?.role === 'admin';
+    if (!isAdmin && !isCron && authHeader.startsWith('Bearer ')) {
+      try {
+        isAdmin = (verifyToken(authHeader.slice(7)) as any)?.role === 'admin';
+      } catch {
+        isAdmin = false;
+      }
+    }
+    if (!isAdmin && !isCron) {
       return res.status(403).json({ error: { message: 'Forbidden' } });
     }
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));

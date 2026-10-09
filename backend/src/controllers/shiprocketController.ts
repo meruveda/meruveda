@@ -265,7 +265,7 @@ export const shiprocketController = {
       const { error: updateErr } = await supabase
         .from('orders')
         .update({
-          status: 'Cancelled',
+          status: 'cancelled',
           tracking_status: 'CANCELED',
           last_tracking_update: new Date().toISOString()
         })
@@ -274,7 +274,7 @@ export const shiprocketController = {
       if (updateErr) throw updateErr;
 
       // Update transaction status on cancel
-      await handleTransactionCancellation(order.id, 'Cancelled');
+      await handleTransactionCancellation(order.id, 'cancelled');
 
       // Add to tracking history
       await supabase.from('order_tracking_history').insert({

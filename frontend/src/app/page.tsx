@@ -85,9 +85,9 @@ async function getFeaturedReviews() {
     if (!res.ok) return [];
     const json = await res.json();
     return (json.data || []).map((r: any) => ({
-      text: r.body || r.comment || '',
+      text: r.comment || r.body || '',
       author: r.users ? `${r.users.first_name || ''} ${(r.users.last_name || '')[0] || ''}.`.trim() : (r.customerName || 'Customer'),
-      product: r.productName || '',
+      product: r.products?.name || r.productName || '',
       rating: r.rating || 5,
     }));
   } catch {
@@ -243,7 +243,7 @@ export default async function Home() {
                         <ShieldCheck size={14} className="text-green-600" />
                       </div>
                       <div className="flex text-gold mb-1">
-                        {[1, 2, 3, 4, 5].map(star => <Star key={star} size={12} className="fill-gold" />)}
+                        {[1, 2, 3, 4, 5].map(star => <Star key={star} size={12} className={star <= (review.rating || 5) ? "fill-gold" : ""} />)}
                       </div>
                       <div className="text-xs text-gray-500 font-medium">Purchased: <span className="text-deep-purple">{review.product}</span></div>
                     </div>

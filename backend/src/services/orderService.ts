@@ -458,7 +458,11 @@ export const orderService = {
     // 2. Prepare update data
     const updateData: any = {};
     if (updates.status !== undefined) updateData.status = updates.status;
-    if (updates.tracking_number !== undefined) updateData.tracking_number = updates.tracking_number;
+    // NOTE: the orders table stores the courier tracking number in `awb_code`
+    // (there is no `tracking_number` column). Map it explicitly so admin
+    // tracking updates never 500 on an unknown column.
+    if (updates.tracking_number !== undefined) updateData.awb_code = updates.tracking_number;
+    if (updates.awb_code !== undefined) updateData.awb_code = updates.awb_code;
     if (updates.shipping_address !== undefined) updateData.shipping_address = updates.shipping_address;
     if (updates.billing_address !== undefined) updateData.billing_address = updates.billing_address;
     if (updates.payment_status !== undefined) updateData.payment_status = updates.payment_status;
@@ -684,13 +688,20 @@ export async function pushOrderToShiprocket(orderId: string) {
   console.log(`[Shiprocket] push response for ${order.order_number}:`, JSON.stringify(srResponse).slice(0, 1000));
 
   if (srResponse && (srResponse as any).order_id) {
-    await supabase.from('orders').update({
+    // Guarded write: only claim the IDs if no concurrent push (webhook
+    // retry, manual push, cron) already stored them. Prevents a slower
+    // duplicate response from dissociating the order from the first shipment.
+    const { data: claimed } = await supabase.from('orders').update({
       shiprocket_order_id: String((srResponse as any).order_id),
       shipment_id: String((srResponse as any).shipment_id || ''),
       pickup_location: pickupLocation,
       tracking_status: 'NEW',
       last_tracking_update: new Date().toISOString(),
-    }).eq('id', order.id);
+    }).eq('id', order.id).is('shiprocket_order_id', null).select('id');
+    if (!claimed || claimed.length === 0) {
+      console.log(`[Shiprocket] order ${order.order_number} was already claimed by a concurrent push; keeping existing IDs.`);
+      return { skipped: true, shiprocket_order_id: (await supabase.from('orders').select('shiprocket_order_id').eq('id', order.id).maybeSingle()).data?.shiprocket_order_id };
+    }
     return srResponse;
   }
   throw new Error(`Shiprocket create returned no order_id: ${JSON.stringify(srResponse).slice(0, 500)}`);
@@ -699,13 +710,22 @@ export async function pushOrderToShiprocket(orderId: string) {
 export async function retryFailedShiprocketPushes(limit = 20) {
   const { data: pending } = await supabase
     .from('orders')
-    .select('id, order_number, status, payment_status, created_at')
+    .select('id, order_number, status, payment_status, payment_method, created_at')
     .is('shiprocket_order_id', null)
     .in('status', ['processing', 'confirmed', 'pending'])
     .order('created_at', { ascending: true })
     .limit(limit);
+  // Only push orders eligible for fulfilment: paid orders (any method) plus
+  // COD orders (paid on delivery). Unpaid `pending` / `pending_payment`
+  // checkouts are skipped so retries never ship orders prematurely.
+  const eligible = (pending || []).filter((o: any) => {
+    const method = String(o.payment_method || '').toUpperCase();
+    const isCOD = method.includes('COD') || method.includes('CASH');
+    if (isCOD) return o.status !== 'pending_payment';
+    return o.payment_status === 'paid';
+  });
   const results: Array<{ orderId: string; ok: boolean; error?: string }> = [];
-  for (const o of pending || []) {
+  for (const o of eligible || []) {
     try {
       await pushOrderToShiprocket(o.id);
       results.push({ orderId: o.id, ok: true });

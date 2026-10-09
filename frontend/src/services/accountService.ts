@@ -286,8 +286,10 @@ export const reviewService = {
   },
   async create(productId: string, rating: number, text: string, images: string[] = []) {
     try {
+      // NOTE: the `reviews` table has no `images` column — photo URLs are
+      // intentionally not sent so text reviews never fail on unknown keys.
+      void images;
       const payload: Record<string, unknown> = { product_id: productId, rating, comment: text };
-      if (images.length > 0) payload.images = images;
       const res = await axiosInstance.post("/reviews", payload);
       return res.data?.data;
     } catch (err) {

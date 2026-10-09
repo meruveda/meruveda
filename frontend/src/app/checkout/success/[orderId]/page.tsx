@@ -66,26 +66,44 @@ export default function CheckoutSuccessPage({ params }: { params: Promise<{ orde
   }, [authLoading, user, router, orderId]);
 
   useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
     const fetchOrder = async () => {
       if (!orderId) return;
       try {
         const res = await axiosInstance.get(`/orders/${orderId}`);
         const orderData = res.data.data;
+        if (cancelled) return;
         setOrder(orderData);
 
         // Clear cart only once after confirmed payment
-        if (!cartCleared && (orderData.status === "processing" || orderData.status === "pending" || orderData.payment_status === "paid")) {
+        if (!cartCleared && (orderData.status === "processing" || orderData.status === "pending_payment" || orderData.status === "pending" || orderData.payment_status === "paid")) {
           await clearCart();
           setCartCleared(true);
         }
+        // Payment completed on the phone but the laptop still shows a pending
+        // order: keep polling the verified status until PayU's server-side
+        // callback confirms (or fails) the payment. Never trust URL params.
+        const stillPending =
+          orderData.payment_status !== "paid" &&
+          orderData.status !== "processing" &&
+          !String(orderData.payment_method || "").toLowerCase().includes("cash") &&
+          ["pending_payment", "pending", "confirmed"].includes(String(orderData.status));
+        if (stillPending && attempts < 40) {
+          attempts += 1;
+          setTimeout(() => { if (!cancelled) fetchOrder(); }, 3000);
+        } else if (!cancelled && (orderData.status === "payment_failed" || orderData.status === "failed")) {
+          router.replace(`/checkout/failed?order_id=${orderId}&reason=${encodeURIComponent("Payment was unsuccessful or cancelled.")}`);
+        }
       } catch (err: any) {
-        setError("Unable to load order details.");
+        if (!cancelled) setError("Unable to load order details.");
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     if (user) fetchOrder();
+    return () => { cancelled = true; };
   }, [orderId, user]);
 
   if (authLoading || isLoading) {
@@ -114,6 +132,21 @@ export default function CheckoutSuccessPage({ params }: { params: Promise<{ orde
   estimatedDelivery.setDate(estimatedDelivery.getDate() + 5);
   const isPaid = order.status === "processing" || order.payment_status === "paid";
   const isCOD = order.payment_method?.toLowerCase().includes("cash");
+  const isPending = !isPaid && !isCOD;
+
+  if (isPending) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <Loader2 size={40} className="animate-spin text-gold" />
+        <h1 className="text-2xl font-playfair font-bold text-deep-purple">Waiting for payment confirmation…</h1>
+        <p className="text-gray-500 text-sm max-w-md">
+          If you completed the payment on your phone, this page will update automatically once the payment is verified.
+          Please do not refresh or close this window.
+        </p>
+        <p className="text-gold font-bold text-sm">Order #{order.order_number}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-ivory/30">

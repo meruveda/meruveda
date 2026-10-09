@@ -57,10 +57,14 @@ export async function generateInvoicePdf(order: any): Promise<Buffer> {
   const page = doc.addPage([width, height]);
 
   const orderNumber = order.order_number || 'MV-000000';
-  const created = new Date(order.created_at).toLocaleString('en-IN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const createdDate = order.created_at ? new Date(order.created_at) : null;
+  const created =
+    createdDate && !Number.isNaN(createdDate.getTime())
+      ? createdDate.toLocaleString('en-IN', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+      : 'Date unavailable';
 
   drawHeader(page, width, orderNumber, created);
 
@@ -117,25 +121,39 @@ export async function generateInvoicePdf(order: any): Promise<Buffer> {
   }
 
   // ---- Items table ----
+  // Same template on every page: repeat the header row when items overflow
+  // one A4 page so long orders are never clipped.
+  const drawTableHeader = (pg: PDFPage, atY: number) => {
+    pg.drawRectangle({ x: 40, y: atY - 4, width: width - 80, height: 22, color: GOLD });
+    pg.drawText('Item', { x: cols.name, y: atY + 3, size: 10, font: bold, color: WHITE });
+    pg.drawText('Qty', { x: cols.qty, y: atY + 3, size: 10, font: bold, color: WHITE });
+    pg.drawText('Rate', { x: cols.rate, y: atY + 3, size: 10, font: bold, color: WHITE });
+    pg.drawText('Amount', { x: cols.amount, y: atY + 3, size: 10, font: bold, color: WHITE });
+  };
+
   y = Math.min(y, by) - 24;
-  page.drawRectangle({ x: 40, y: y - 4, width: width - 80, height: 22, color: GOLD });
   const cols = { name: 48, qty: 330, rate: 390, amount: 470 };
-  page.drawText('Item', { x: cols.name, y: y + 3, size: 10, font: bold, color: WHITE });
-  page.drawText('Qty', { x: cols.qty, y: y + 3, size: 10, font: bold, color: WHITE });
-  page.drawText('Rate', { x: cols.rate, y: y + 3, size: 10, font: bold, color: WHITE });
-  page.drawText('Amount', { x: cols.amount, y: y + 3, size: 10, font: bold, color: WHITE });
+  let currentPage = page;
+  drawTableHeader(currentPage, y);
 
   y -= 24;
   const items: any[] = order.order_items || [];
+  const newPage = () => {
+    currentPage = doc.addPage([width, height]);
+    y = height - 60;
+    drawTableHeader(currentPage, y);
+    y -= 24;
+  };
   items.forEach((item) => {
+    if (y < 260) newPage(); // keep room for totals + footer
     const label = (item.product_name || 'Item').slice(0, 42);
     const qty = Number(item.quantity) || 1;
     const price = Number(item.price) || 0;
-    page.drawText(label, { x: cols.name, y, size: 10, font: helv, color: BRAND });
-    page.drawText(String(qty), { x: cols.qty, y, size: 10, font: helv, color: BRAND });
-    page.drawText(money(price), { x: cols.rate, y, size: 10, font: helv, color: BRAND });
-    page.drawText(money(Number(item.total) || qty * price), { x: cols.amount, y, size: 10, font: helv, color: BRAND });
-    page.drawLine({
+    currentPage.drawText(label, { x: cols.name, y, size: 10, font: helv, color: BRAND });
+    currentPage.drawText(String(qty), { x: cols.qty, y, size: 10, font: helv, color: BRAND });
+    currentPage.drawText(money(price), { x: cols.rate, y, size: 10, font: helv, color: BRAND });
+    currentPage.drawText(money(Number(item.total) || qty * price), { x: cols.amount, y, size: 10, font: helv, color: BRAND });
+    currentPage.drawLine({
       start: { x: 40, y: y - 6 },
       end: { x: width - 40, y: y - 6 },
       thickness: 0.5,
@@ -145,6 +163,7 @@ export async function generateInvoicePdf(order: any): Promise<Buffer> {
   });
 
   // ---- Totals ----
+  if (y < 220) newPage();
   y -= 12;
   const totals: Array<[string, string]> = [
     ['Subtotal', money(order.subtotal)],
@@ -153,37 +172,37 @@ export async function generateInvoicePdf(order: any): Promise<Buffer> {
     ['Shipping', Number(order.shipping_fee) === 0 ? 'FREE' : money(order.shipping_fee)],
   ];
   totals.forEach(([label, value]) => {
-    page.drawText(label, { x: 340, y, size: 10, font: helv, color: GREY });
-    page.drawText(value, { x: 455, y, size: 10, font: helv, color: BRAND });
+    currentPage.drawText(label, { x: 340, y, size: 10, font: helv, color: GREY });
+    currentPage.drawText(value, { x: 455, y, size: 10, font: helv, color: BRAND });
     y -= 16;
   });
 
   y -= 4;
-  page.drawRectangle({ x: 330, y: y - 8, width: 225, height: 26, color: BRAND });
-  page.drawText('TOTAL', { x: 340, y: y, size: 12, font: bold, color: WHITE });
-  page.drawText(money(order.total), { x: 455, y: y, size: 12, font: bold, color: GOLD });
+  currentPage.drawRectangle({ x: 330, y: y - 8, width: 225, height: 26, color: BRAND });
+  currentPage.drawText('TOTAL', { x: 340, y: y, size: 12, font: bold, color: WHITE });
+  currentPage.drawText(money(order.total), { x: 455, y: y, size: 12, font: bold, color: GOLD });
 
   // ---- Payment / footer ----
   y -= 44;
-  page.drawText(`Payment method: ${order.payment_method || '-'}`, {
+  currentPage.drawText(`Payment method: ${order.payment_method || '-'}`, {
     x: 40, y, size: 10, font: helv, color: BRAND,
   });
   y -= 14;
-  page.drawText(`Payment status: ${(order.payment_status || 'pending').toUpperCase()}`, {
+  currentPage.drawText(`Payment status: ${(order.payment_status || 'pending').toUpperCase()}`, {
     x: 40, y, size: 10, font: helv, color: BRAND,
   });
 
   if (order.awb_code) {
     y -= 14;
-    page.drawText(`Tracking (AWB): ${order.awb_code}${order.courier_name ? ` — ${order.courier_name}` : ''}`, {
+    currentPage.drawText(`Tracking (AWB): ${order.awb_code}${order.courier_name ? ` — ${order.courier_name}` : ''}`, {
       x: 40, y, size: 10, font: helv, color: BRAND,
     });
   }
 
   y -= 30;
-  page.drawText('Thank you for shopping with MeruVeda.', { x: 40, y, size: 11, font: bold, color: GOLD });
+  currentPage.drawText('Thank you for shopping with MeruVeda.', { x: 40, y, size: 11, font: bold, color: GOLD });
   y -= 14;
-  page.drawText(
+  currentPage.drawText(
     'This is a computer generated invoice and does not require a physical signature.',
     { x: 40, y, size: 8, font: helv, color: GREY }
   );

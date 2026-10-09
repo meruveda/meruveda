@@ -16,7 +16,8 @@ const FILTERS = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
-const TERMINAL_BAD = ["cancelled", "failed"];
+const TERMINAL_BAD = ["cancelled", "failed", "returned", "refunded"];
+const TERMINAL_GOOD = ["delivered", ...TERMINAL_BAD];
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
@@ -47,7 +48,8 @@ export default function OrdersPage() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return orders.filter((o) => {
-      if (filter === "active" && ["delivered", ...TERMINAL_BAD].includes(o.normalizedStatus)) return false;
+      // Admin-set post-delivery states (returned/refunded) are terminal, not active.
+      if (filter === "active" && TERMINAL_GOOD.includes(o.normalizedStatus)) return false;
       if (filter === "delivered" && o.normalizedStatus !== "delivered") return false;
       if (filter === "cancelled" && !TERMINAL_BAD.includes(o.normalizedStatus)) return false;
       if (!q) return true;

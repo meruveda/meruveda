@@ -44,7 +44,12 @@ export const CustomersPage: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchCustomers()
+    // Debounce keystrokes so typing a name doesn't storm the API (and so a
+    // slow earlier request can't overwrite a newer one).
+    const t = setTimeout(() => {
+      fetchCustomers();
+    }, 300);
+    return () => clearTimeout(t);
   }, [page, search])
 
   useEffect(() => {

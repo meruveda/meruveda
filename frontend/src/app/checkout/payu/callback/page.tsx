@@ -40,6 +40,30 @@ function PayUCallbackContent() {
           router.replace(`/checkout/success/${orderId}`);
         } else if (result && result.success === false) {
           router.replace(`/checkout/failed?order_id=${orderId}&reason=${encodeURIComponent(result.message || 'Payment failed')}`);
+        } else if (payload.txnid || orderId) {
+          // The backend answered with its redirect (verification already ran
+          // server-side) but this page is still mounted — e.g. the gateway
+          // returned the laptop browser here. Poll the verified status by
+          // order number and route exactly once from server truth.
+          const ref = encodeURIComponent(String(payload.txnid || orderId));
+          for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 3000));
+            try {
+              const st = await axiosInstance.get(`/payu/status/${ref}`);
+              const d = st.data?.data;
+              if (d?.paid && d?.orderId) {
+                router.replace(`/checkout/success/${d.orderId}`);
+                return;
+              }
+              if (d?.failed) {
+                router.replace(`/checkout/failed?order_id=${d.orderId || ""}&reason=${encodeURIComponent("Payment was unsuccessful or cancelled.")}`);
+                return;
+              }
+            } catch {
+              /* keep polling */
+            }
+          }
+          setError("Payment is being verified. If this page does not change, check your order history.");
         } else {
           // Non-JSON (redirect) response: verification already happened
           // server-side and the browser is navigating — stay put briefly,

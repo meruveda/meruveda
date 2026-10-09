@@ -235,13 +235,17 @@ export default function TrackOrderPage() {
               <div>
                 <p className="font-bold text-deep-purple">{result.order_number}</p>
                 <p className="text-xs text-gray-500">
-                  Placed on{" "}
-                  {new Date(result.created_at).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                  {result.shipping_address?.city ? ` · ${result.shipping_address.city}` : ""}
+                  {liveAwb ? (
+                    <>Live courier tracking{result.shipping_address?.city ? ` · ${result.shipping_address.city}` : ""}</>
+                  ) : (
+                    <>Placed on{" "}
+                    {new Date(result.created_at).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                    {result.shipping_address?.city ? ` · ${result.shipping_address.city}` : ""}</>
+                  )}
                 </p>
               </div>
             </div>

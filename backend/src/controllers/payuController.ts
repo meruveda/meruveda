@@ -119,7 +119,20 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
 
     if (orderErr || !order) {
       console.error('[PayU Callback] Order not found for txnid:', orderNumber);
-      return res.status(404).json({ success: false, error: 'Order not found' });
+      // The laptop browser POSTs here and follows redirects — a raw 404 JSON
+      // page is the "unexpected page" customers reported. Always redirect to
+      // the failed page so the browser lands somewhere meaningful.
+      return res.redirect(
+        `${storefrontBaseUrl(req)}/checkout/failed?reason=${encodeURIComponent('We could not find your order. Please check your order history or contact support.')}`
+      );
+    }
+
+    // Idempotency: PayU may POST the browser callback more than once (retry /
+    // double-submit). If the order is already confirmed paid, don't re-run
+    // side effects — just send the browser to the success page.
+    if (status === 'success' && order.payment_status === 'paid' && order.status === 'processing') {
+      console.log(`[PayU] duplicate success callback for already-paid order ${orderNumber}, redirecting to success page`);
+      return res.redirect(`${storefrontBaseUrl(req)}/checkout/success/${order.id}`);
     }
 
     const upsertTransaction = async (txStatus: 'success' | 'failed', detailedStatus: 'captured' | 'failed' | 'hash_mismatch', gatewayRef?: string) => {
@@ -215,6 +228,59 @@ export const handlePayUCallback = async (req: Request, res: Response, next: Next
       console.log(`[PayU] payment ${status} for order ${orderNumber}, redirecting to failed page`);
       return res.redirect(`${storefrontBaseUrl(req)}/checkout/failed?order_id=${order.id}&reason=${encodeURIComponent(payload.error_Message || 'Payment was unsuccessful or cancelled.')}`);
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Verified payment-status endpoint (owner or admin only).
+ * Powers laptop polling for QR/UPI payments completed on the customer's
+ * phone: the laptop polls `GET /api/payu/status/:ref` until the server-side
+ * verification (callback above) flips the order to paid — the browser never
+ * trusts redirect parameters alone. Accepts the internal order id or the
+ * public order number (PayU txnid).
+ */
+export const getPaymentStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const ref = String(req.params.ref || '').trim();
+    if (!ref) {
+      return res.status(400).json({ error: { message: 'Order reference is required' } });
+    }
+    const safeRef = ref.replace(/[^A-Za-z0-9_-]/g, '');
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(safeRef);
+
+    let query = supabase
+      .from('orders')
+      .select('id, order_number, user_id, status, payment_status, payment_method, total')
+      .limit(1);
+    query = isUuid
+      ? query.or(`id.eq.${safeRef},order_number.eq.${safeRef}`)
+      : query.eq('order_number', safeRef);
+
+    const { data: order, error } = await query.maybeSingle();
+    if (error) throw error;
+    if (!order) {
+      return res.status(404).json({ error: { message: 'Order not found' } });
+    }
+    if (req.user?.role !== 'admin' && (order as any).user_id !== req.user?.id) {
+      return res.status(403).json({ error: { message: 'Forbidden' } });
+    }
+    const paid = (order as any).payment_status === 'paid' || (order as any).status === 'processing';
+    const failed = ['payment_failed', 'failed', 'cancelled'].includes(String((order as any).status));
+    res.json({
+      data: {
+        orderId: (order as any).id,
+        orderNumber: (order as any).order_number,
+        status: (order as any).status,
+        payment_status: (order as any).payment_status,
+        paymentMethod: (order as any).payment_method,
+        total: (order as any).total,
+        paid,
+        failed,
+        pending: !paid && !failed,
+      },
+    });
   } catch (error) {
     next(error);
   }
