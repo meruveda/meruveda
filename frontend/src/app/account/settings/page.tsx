@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Bell, Eye, EyeOff, Loader2, Lock, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { isValidEmail, isValidPhone } from "@/types/account";
+import { displayEmail } from "@/types/account";
 import { ConfirmDialog, Notice } from "@/components/account/ui";
 
 type Prefs = {
@@ -65,7 +66,7 @@ export default function SettingsPage() {
       return;
     }
     if (user) {
-      setContact({ email: user.email || "", phone: user.phone || "" });
+      setContact({ email: displayEmail(user.email), phone: user.phone || "" });
     }
     const load = async () => {
       try {
@@ -137,7 +138,7 @@ export default function SettingsPage() {
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } })?.response?.status;
         if (status === 404) {
-          await axiosInstance.post("/auth/forgot-password", { email: user?.email });
+          await axiosInstance.post("/auth/forgot-password", { identifier: displayEmail(user?.email) || user?.phone });
           say("info", "Password change needs email verification — we just sent you a reset link.");
         } else {
           throw e;
@@ -183,6 +184,13 @@ export default function SettingsPage() {
       </div>
 
       {notice && <Notice tone={notice.tone}>{notice.msg}</Notice>}
+
+      {/* Migration nudge — logins now use the mobile number. */}
+      {user && !user.phone && (
+        <Notice tone="info">
+          Logins now use your mobile number. Add it below under Contact Details so you can always sign back in.
+        </Notice>
+      )}
 
       {/* Personal information */}
       <section aria-label="Personal information">
@@ -240,7 +248,7 @@ export default function SettingsPage() {
 
         <div className="mt-5 max-w-md bg-ivory/50 border border-gray-100 rounded-xl px-4 py-3.5 text-xs text-gray-600 flex items-start gap-2.5">
           <ShieldCheck size={16} className="text-sage shrink-0 mt-0.5" />
-          <p>Signed in as <span className="font-bold text-deep-purple">{user?.email || user?.phone || "you"}</span>. If this isn&apos;t you, change your password and log out immediately.</p>
+          <p>Signed in as <span className="font-bold text-deep-purple">{displayEmail(user?.email) || user?.phone || "you"}</span>. If this isn&apos;t you, change your password and log out immediately.</p>
         </div>
       </section>
 

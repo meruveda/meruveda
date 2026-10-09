@@ -41,12 +41,14 @@ function SignupInner() {
       setError("Please enter your first name.");
       return;
     }
-    if (!isValidEmail(form.email)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
     if (!isValidPhone(form.phone)) {
       setError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    // Email is optional — only used for order notifications. Validate when given.
+    const cleanEmail = form.email.trim();
+    if (cleanEmail && !isValidEmail(cleanEmail)) {
+      setError("Please enter a valid email address, or leave it blank.");
       return;
     }
     if (form.password.length < 6) {
@@ -62,8 +64,8 @@ function SignupInner() {
       await signup({
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        email: form.email.trim(),
-        phone: `+91 ${normalizePhone10(form.phone)}`,
+        email: cleanEmail || undefined,
+        phone: normalizePhone10(form.phone),
         password: form.password,
       });
       router.replace(next);
@@ -127,12 +129,6 @@ function SignupInner() {
             </div>
           </div>
           <div>
-            <label className={label} htmlFor="su-email">
-              Email address *
-            </label>
-            <input id="su-email" type="email" className={input} value={form.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com" />
-          </div>
-          <div>
             <label className={label} htmlFor="su-phone">
               Mobile number *
             </label>
@@ -142,6 +138,12 @@ function SignupInner() {
               </span>
               <input id="su-phone" className={`${input} rounded-l-none`} value={form.phone} onChange={set("phone")} inputMode="tel" autoComplete="tel" placeholder="98765 43210" />
             </div>
+          </div>
+          <div>
+            <label className={label} htmlFor="su-email">
+              Email address <span className="text-gray-400 font-normal">(optional, for order updates)</span>
+            </label>
+            <input id="su-email" type="email" className={input} value={form.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com" />
           </div>
           <div>
             <label className={label} htmlFor="su-password">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Loader2, Pencil } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { isValidEmail, isValidPhone, normalizePhone10 } from "@/types/account";
+import { displayEmail } from "@/types/account";
 import { Notice } from "@/components/account/ui";
 
 /**
@@ -33,7 +34,7 @@ export function EditProfileModal({ open, onClose }: { open: boolean; onClose: ()
       setForm({
         firstName: user.firstName || "",
         lastName: user.lastName || "",
-        email: user.email || "",
+        email: displayEmail(user.email),
         phone: user.phone || "",
         avatar: user.avatar || "",
         dob,

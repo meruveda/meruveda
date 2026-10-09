@@ -198,6 +198,22 @@ export function isValidEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim());
 }
 
+/**
+ * Synthetic identities the backend assigns to phone-only accounts
+ * (`<digits>@meruveda.whatsapp`) — never a real inbox, so the UI must not
+ * present them as the customer's email address.
+ */
+export function isPlaceholderEmail(v?: string | null): boolean {
+  if (!v) return true;
+  return String(v).trim().toLowerCase().endsWith("@meruveda.whatsapp");
+}
+
+/** The customer's real email, or '' when the account only has a placeholder identity. */
+export function displayEmail(v?: string | null): string {
+  if (!v || isPlaceholderEmail(v)) return "";
+  return String(v).trim();
+}
+
 export function memberSinceLabel(raw?: string): string | null {
   if (!raw) return null;
   const d = new Date(raw);

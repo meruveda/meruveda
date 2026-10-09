@@ -14,10 +14,10 @@ interface AuthContextType {
   /** URL to redirect to after a successful login */
   returnUrl: string | null;
   setReturnUrl: (url: string | null) => void;
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<void>;
   signup: (data: SignupData) => Promise<void>;
   logout: () => void;
-  forgotPassword: (email: string) => Promise<void>;
+  forgotPassword: (identifier: string) => Promise<void>;
   /** Request a WhatsApp OTP for the checkout form. */
   sendOtp: (phone: string) => Promise<{ expiresInSeconds: number; devOtp?: string }>;
   resendOtp: (phone: string) => Promise<{ expiresInSeconds: number; devOtp?: string }>;
@@ -51,8 +51,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = useCallback(async (email: string, password: string, rememberMe = false) => {
-    const { user: loggedInUser } = await authService.login(email, password, rememberMe);
+  const login = useCallback(async (identifier: string, password: string, rememberMe = false) => {
+    const { user: loggedInUser } = await authService.login(identifier, password, rememberMe);
     setUser(loggedInUser);
   }, []);
 
@@ -67,8 +67,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setReturnUrl(null);
   }, []);
 
-  const forgotPassword = useCallback(async (email: string) => {
-    await authService.forgotPassword(email);
+  const forgotPassword = useCallback(async (identifier: string) => {
+    await authService.forgotPassword(identifier);
   }, []);
 
   const sendOtp = useCallback(async (phone: string) => authService.sendOtp(phone), []);

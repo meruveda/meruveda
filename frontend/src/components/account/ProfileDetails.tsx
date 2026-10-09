@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { isValidEmail, isValidPhone, normalizePhone10 } from "@/types/account";
+import { displayEmail } from "@/types/account";
 
 /**
  * Myntra-style Profile Details card.
@@ -78,7 +79,7 @@ export default function ProfileDetails() {
 
   const rows: Array<{ label: string; value: string; empty: boolean }> = [
     { label: "Full Name", value: fullName, empty: !fullName || fullName === "—" },
-    { label: "Email ID", value: user.email || "", empty: !user.email },
+    { label: "Email ID", value: displayEmail(user.email), empty: !displayEmail(user.email) },
     { label: "Mobile Number", value: user.phone || "", empty: !user.phone },
     {
       label: "Gender",
@@ -106,7 +107,7 @@ export default function ProfileDetails() {
     setForm({
       fullName,
       mobile: user.phone || "",
-      email: user.email || "",
+      email: displayEmail(user.email),
       gender: current.gender,
       dob: current.dob,
       location: current.location,

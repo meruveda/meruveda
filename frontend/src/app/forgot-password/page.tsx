@@ -3,7 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { authService } from "@/services/authService";
+import { isValidEmail, isValidPhone } from "@/types/account";
 import { Loader2 } from "lucide-react";
+
+const GENERIC_SENT =
+  "If an account exists, password reset instructions have been sent to its registered email address.";
 
 export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
@@ -18,21 +22,26 @@ export default function ForgotPasswordPage() {
 
     const form = e.currentTarget;
     const data = new FormData(form);
-    const email = data.get("email") as string;
+    const identifier = String(data.get("identifier") || "").trim();
 
-    if (!email) {
-      setError("Email address is required.");
+    if (!identifier) {
+      setError("Mobile number or email address is required.");
+      setLoading(false);
+      return;
+    }
+    if (!isValidPhone(identifier) && !isValidEmail(identifier)) {
+      setError("Please enter a valid 10-digit mobile number or email address.");
       setLoading(false);
       return;
     }
 
     try {
-      await authService.forgotPassword(email);
-      setSuccess("If an account exists for this email, a reset link has been sent.");
+      await authService.forgotPassword(identifier);
+      setSuccess(GENERIC_SENT);
     } catch (err: unknown) {
       console.error("Forgot password error:", err);
       // Show generic message anyway to protect user privacy
-      setSuccess("If an account exists for this email, a reset link has been sent.");
+      setSuccess(GENERIC_SENT);
     } finally {
       setLoading(false);
     }
@@ -48,7 +57,8 @@ export default function ForgotPasswordPage() {
         Reset Password
       </h1>
       <p className="text-gray-600 mb-8 text-center max-w-sm">
-        Enter your email address to receive password reset instructions.
+        Enter your registered mobile number or email address. The reset link is
+        sent to your registered email address.
       </p>
 
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 w-full max-w-md">
@@ -65,14 +75,15 @@ export default function ForgotPasswordPage() {
 
         <form onSubmit={handleSubmit} noValidate>
           <div className="mb-6">
-            <label className={labelClass}>Email Address</label>
+            <label className={labelClass}>Mobile number or email address</label>
             <input
-              name="email"
+              name="identifier"
               required
-              type="email"
+              type="text"
               className={inputClass}
-              placeholder="you@example.com"
-              autoComplete="email"
+              placeholder="98765 43210 or you@example.com"
+              autoComplete="username"
+              inputMode="text"
             />
           </div>
 

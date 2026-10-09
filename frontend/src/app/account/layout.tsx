@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
+import { displayEmail } from "@/types/account";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -85,7 +86,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
               <h2 className="font-playfair font-bold text-deep-purple text-lg leading-tight truncate">
                 {user.firstName} {user.lastName}
               </h2>
-              <p className="text-xs text-gray-500 truncate">{user.email || user.phone}</p>
+              <p className="text-xs text-gray-500 truncate">{displayEmail(user.email) || user.phone}</p>
             </div>
           </div>
 

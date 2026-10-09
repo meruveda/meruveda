@@ -21,11 +21,11 @@ export interface AuthResponse {
 }
 
 export interface SignupData {
-  email: string;
+  phone: string;
   password: string;
   firstName: string;
   lastName: string;
-  phone: string;
+  email?: string;
 }
 
 const TOKEN_KEY = 'meruveda_auth_token';
@@ -53,9 +53,14 @@ function unwrapError(error: any): never {
 }
 
 export const authService = {
-  login: async (email: string, password: string, rememberMe = false): Promise<AuthResponse> => {
+  /**
+   * Mobile-first login. `identifier` is the 10-digit mobile number (primary)
+   * or, for legacy accounts, the email address. The backend auto-detects the
+   * kind — the payload key is only a hint.
+   */
+  login: async (identifier: string, password: string, rememberMe = false): Promise<AuthResponse> => {
     try {
-      const response = await axiosInstance.post('/auth/login', { email, password });
+      const response = await axiosInstance.post('/auth/login', { identifier, password });
       const { token, user } = response.data;
 
       const storage = rememberMe ? localStorage : sessionStorage;
@@ -107,9 +112,15 @@ export const authService = {
     }
   },
 
-  forgotPassword: async (email: string): Promise<void> => {
+  /**
+   * Password recovery for mobile-first accounts. The reset link is delivered
+   * to the account's registered email address (kept as the secure recovery
+   * channel) — see the forgot-password page copy. Never reveals whether the
+   * identifier has an account; the backend always replies success.
+   */
+  forgotPassword: async (identifier: string): Promise<void> => {
     try {
-      await axiosInstance.post('/auth/forgot-password', { email });
+      await axiosInstance.post('/auth/forgot-password', { identifier });
     } catch (error: any) {
       unwrapError(error);
     }

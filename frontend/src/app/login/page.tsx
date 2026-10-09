@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { isValidEmail, isValidPhone, normalizePhone10 } from "@/types/account";
 
 /** Only same-site app paths; never external, protocol-relative or /login. */
 function safeNext(raw: string | null): string {
@@ -19,7 +20,9 @@ function LoginInner() {
   const searchParams = useSearchParams();
   const next = safeNext(searchParams.get("next") || searchParams.get("returnUrl"));
 
+  const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
+  const [useEmail, setUseEmail] = useState(false);
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -34,16 +37,31 @@ function LoginInner() {
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setError(null);
-    if (!email.trim() || !password) {
-      setError("Please enter your email and password.");
+    if (useEmail) {
+      if (!isValidEmail(email)) {
+        setError("Please enter a valid email address.");
+        return;
+      }
+    } else if (!isValidPhone(mobile)) {
+      setError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+    if (!password) {
+      setError(
+        useEmail
+          ? "Please enter your email and password."
+          : "Please enter your mobile number and password."
+      );
       return;
     }
     setBusy(true);
     try {
-      await login(email.trim(), password, rememberMe);
+      const identifier = useEmail ? email.trim() : normalizePhone10(mobile);
+      await login(identifier, password, rememberMe);
       router.replace(next);
     } catch (err: unknown) {
-      setError((err as Error)?.message || "Invalid email or password.");
+      // Generic on purpose — never hint whether the number has an account.
+      setError((err as Error)?.message || "Invalid mobile number or password.");
     } finally {
       setBusy(false);
     }
@@ -86,21 +104,45 @@ function LoginInner() {
         )}
 
         <form onSubmit={submit} className="space-y-4" noValidate>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1.5" htmlFor="login-email">
-              Email address
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              required
-              className={input}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-            />
-          </div>
+          {useEmail ? (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1.5" htmlFor="login-email">
+                Email address
+              </label>
+              <input
+                id="login-email"
+                type="email"
+                required
+                className={input}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1.5" htmlFor="login-mobile">
+                Mobile number
+              </label>
+              <div className="flex">
+                <span className="inline-flex items-center px-3 border border-r-0 border-gray-300 rounded-l text-sm text-gray-500 bg-gray-50">
+                  +91
+                </span>
+                <input
+                  id="login-mobile"
+                  type="tel"
+                  required
+                  className={`${input} rounded-l-none`}
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  placeholder="98765 43210"
+                  autoComplete="tel"
+                  inputMode="tel"
+                />
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-xs text-gray-500 mb-1.5" htmlFor="login-password">
               Password
@@ -150,6 +192,19 @@ function LoginInner() {
             {busy && <Loader2 size={14} className="animate-spin" />}
             {busy ? "LOGGING IN…" : "LOGIN"}
           </button>
+
+          <p className="text-center text-[13px]">
+            <button
+              type="button"
+              onClick={() => {
+                setUseEmail((v) => !v);
+                setError(null);
+              }}
+              className="text-gray-500 hover:text-deep-purple hover:underline"
+            >
+              {useEmail ? "Use mobile number instead" : "Registered before? Log in with email"}
+            </button>
+          </p>
         </form>
 
         <p className="text-[13px] text-gray-500 text-center mt-6">

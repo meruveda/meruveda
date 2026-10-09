@@ -15,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useWishlist } from "@/context/WishlistContext";
 import type { AccountOrder } from "@/types/account";
 import { memberSinceLabel } from "@/types/account";
+import { displayEmail, normalizePhone10 } from "@/types/account";
 import { EmptyState, StatusBadge } from "./ui";
 
 /* Profile header card — avatar, name, contact, member-since + Edit action. */
@@ -37,8 +38,8 @@ export function ProfileHeaderCard({ onEdit }: { onEdit: () => void }) {
         <h2 className="text-2xl font-playfair font-bold text-deep-purple leading-tight">
           {user.firstName} {user.lastName}
         </h2>
-        <p className="text-sm text-gray-500 truncate mt-0.5">{user.email || "No email on file"}</p>
-        {user.phone && <p className="text-sm text-gray-500">{user.phone}</p>}
+        <p className="text-sm text-gray-500 truncate mt-0.5">{displayEmail(user.email) || "No email on file"}</p>
+        {user.phone && <p className="text-sm text-gray-500">+91 {normalizePhone10(user.phone)}</p>}
         <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1.5">
           <ShieldCheck size={13} className="text-sage" />
           {since ? `Member since ${since}` : "Verified MeruVeda customer"}

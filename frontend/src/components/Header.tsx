@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ShoppingCart, User, ChevronDown, Package, Star, MessageSquare, Heart, Settings, LogOut, Menu, X } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
+import { displayEmail } from "@/types/account";
 import { useState, useRef, useEffect } from "react";
 
 export default function Header() {
@@ -101,7 +102,7 @@ export default function Header() {
               <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-50 animate-in fade-in slide-in-from-top-2">
                 <div className="px-4 py-3 border-b border-gray-100">
                   <p className="font-bold text-plum-deep text-sm">{user.firstName} {user.lastName}</p>
-                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                  <p className="text-xs text-gray-500 truncate">{displayEmail(user.email) || user.phone}</p>
                 </div>
                 <Link
                   href="/login"
