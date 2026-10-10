@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Star, Check, X as RejectIcon, Trash2, MessageCircle, RefreshCw, Sparkles, Edit } from 'lucide-react'
 import { reviewService } from '../../services/reviewService'
 import { Review, ReviewStatus } from '../../types'
@@ -13,9 +13,28 @@ export const ReviewsPage: React.FC = () => {
   // Tracks which review id currently has an action in flight so its buttons
   // disable (double-clicks otherwise look like "nothing happens").
   const [actingId, setActingId] = useState<string | null>(null)
+  // Ref mirror of actingId: state updates are async, so rapid clicks in the
+  // same tick would all see a stale `null` and fire duplicates. The ref
+  // updates synchronously and is the actual double-click guard.
+  const actingRef = useRef<string | null>(null)
+
+  const beginActing = (id: string): boolean => {
+    if (actingRef.current) return false
+    actingRef.current = id
+    setActingId(id)
+    return true
+  }
+
+  const endActing = () => {
+    actingRef.current = null
+    setActingId(null)
+  }
 
   const actionError = (err: any, fallback: string) =>
-    err?.response?.data?.error?.message || err?.message || fallback
+    err?.response?.data?.error?.message ||
+    err?.response?.data?.message ||
+    err?.message ||
+    fallback
 
   // Reply Modal
   const [isReplyOpen, setIsReplyOpen] = useState(false)
@@ -68,8 +87,7 @@ export const ReviewsPage: React.FC = () => {
   }, [])
 
   const handleStatusUpdate = async (id: string, status: ReviewStatus) => {
-    if (actingId) return
-    setActingId(id)
+    if (!beginActing(id)) return
     try {
       await reviewService.updateReviewStatus(id, status)
       toast.success(`Review ${status}`)
@@ -77,13 +95,12 @@ export const ReviewsPage: React.FC = () => {
     } catch (err) {
       toast.error(actionError(err, 'Operation failed'))
     } finally {
-      setActingId(null)
+      endActing()
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (actingId) return
-    setActingId(id)
+    if (!beginActing(id)) return
     try {
       await reviewService.deleteReview(id)
       toast.success('Review deleted')
@@ -91,7 +108,7 @@ export const ReviewsPage: React.FC = () => {
     } catch (err) {
       toast.error(actionError(err, 'Failed to delete review'))
     } finally {
-      setActingId(null)
+      endActing()
     }
   }
 
@@ -116,8 +133,7 @@ export const ReviewsPage: React.FC = () => {
   }
 
   const handleFeatureToggle = async (id: string, currentlyFeatured: boolean) => {
-    if (actingId) return
-    setActingId(id)
+    if (!beginActing(id)) return
     try {
       await reviewService.featureReview(id, !currentlyFeatured)
       toast.success(currentlyFeatured ? 'Removed from homepage' : 'Now featured on homepage!')
@@ -125,7 +141,7 @@ export const ReviewsPage: React.FC = () => {
     } catch (err) {
       toast.error(actionError(err, 'Failed to update feature status'))
     } finally {
-      setActingId(null)
+      endActing()
     }
   }
 
