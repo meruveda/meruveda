@@ -41,16 +41,22 @@ export const OrderDetailPage: React.FC = () => {
   const [isCancellingOrder, setIsCancellingOrder] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isPushingShiprocket, setIsPushingShiprocket] = useState(false)
+  // Last push failure, kept visible so a failed auto-push is diagnosable and
+  // retryable instead of failing silently (backend logs carry the details).
+  const [shiprocketError, setShiprocketError] = useState<string | null>(null)
 
   const handlePushToShiprocket = async () => {
     if (!order) return;
     setIsPushingShiprocket(true);
+    setShiprocketError(null);
     try {
       await shiprocketService.pushOrderToShiprocket(order.id);
       toast.success('Order pushed to Shiprocket');
       fetchOrderDetail();
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || err.message || 'Failed to push to Shiprocket');
+      const message = err.response?.data?.error?.message || err.message || 'Failed to push to Shiprocket';
+      setShiprocketError(message);
+      toast.error(message);
     } finally {
       setIsPushingShiprocket(false);
     }
@@ -127,8 +133,17 @@ export const OrderDetailPage: React.FC = () => {
       if (!res.ok) throw new Error('Failed to download invoice');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      toast.success('Invoice opened in new tab');
+      try {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `Invoice-${(order as any).order_number || order.id}.pdf`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      toast.success('Invoice downloaded');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to download invoice');
     } finally {
@@ -454,6 +469,11 @@ export const OrderDetailPage: React.FC = () => {
                 <Truck className="h-5 w-5 text-slate-400" /> Shiprocket Logistics
               </h3>
               <p className="text-xs text-slate-500">This order has not been pushed to Shiprocket yet.</p>
+              {shiprocketError && (
+                <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900 rounded-lg p-3">
+                  Shiprocket error: {shiprocketError}
+                </p>
+              )}
               <button
                 disabled={isPushingShiprocket}
                 className="btn-primary text-xs py-2 justify-center w-full"

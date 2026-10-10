@@ -1,6 +1,7 @@
 // Central account-domain types. Mirrors backend models (User, Address,
-// Order, OrderItem, Shipment, ReturnRequest, Refund, Review, Wishlist,
-// PaymentMethod) while staying tolerant of backend shape drift.
+// Order, OrderItem, Shipment, Review, Wishlist, PaymentMethod) while staying
+// tolerant of backend shape drift. Items are non-returnable (see Shipping
+// Policy), so there are no return/refund request types here.
 
 export type AddressType = "Home" | "Work" | "Other";
 
@@ -106,42 +107,6 @@ export const ORDER_FLOW_LABELS: Record<string, string> = {
   delivered: "Delivered",
 };
 
-export type ReturnStatus =
-  | "requested"
-  | "approved"
-  | "pickup_scheduled"
-  | "picked_up"
-  | "quality_check"
-  | "refund_initiated"
-  | "refund_completed"
-  | "rejected";
-
-export interface ReturnRequest {
-  id: string;
-  orderId: string;
-  orderNumber: string;
-  productId?: string;
-  productName: string;
-  productImage?: string;
-  requestDate: string;
-  reason: string;
-  description?: string;
-  pickupAddressId?: string;
-  status: ReturnStatus;
-  refundAmount: number;
-  refundStatus: "pending" | "initiated" | "completed" | "rejected" | "na";
-}
-
-export const RETURN_FLOW: Array<{ key: ReturnStatus; label: string }> = [
-  { key: "requested", label: "Return Requested" },
-  { key: "approved", label: "Approved" },
-  { key: "pickup_scheduled", label: "Pickup Scheduled" },
-  { key: "picked_up", label: "Picked Up" },
-  { key: "quality_check", label: "Quality Check" },
-  { key: "refund_initiated", label: "Refund Initiated" },
-  { key: "refund_completed", label: "Refund Completed" },
-];
-
 export interface AccountReview {
   id: string;
   productId: string;
@@ -167,8 +132,6 @@ export interface SavedCard {
 export interface DashboardStats {
   totalOrders: number;
   activeOrders: number;
-  activeReturns: number;
-  completedReturns: number;
   reviewed: number;
   pendingReviews: number;
   wishlistCount: number;

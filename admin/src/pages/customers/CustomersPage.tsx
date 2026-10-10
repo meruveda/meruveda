@@ -10,6 +10,32 @@ import toast from 'react-hot-toast'
 
 const PAGE_SIZE = 10
 
+const PLACEHOLDER_EMAIL_DOMAIN = 'meruveda.whatsapp'
+
+const isPlaceholderEmail = (email?: string | null): boolean => {
+  if (!email) return true
+  return String(email).trim().toLowerCase().endsWith(`@${PLACEHOLDER_EMAIL_DOMAIN}`)
+}
+
+/** Name -> real-email prefix -> phone -> 'Unknown', so no directory row is ever blank. */
+const displayNameOf = (c: { name?: string; email?: string; phone?: string }): string => {
+  const name = (c.name || '').trim()
+  if (name && name !== 'Guest Customer') return name
+  const email = (c.email || '').trim()
+  if (email && !isPlaceholderEmail(email)) {
+    const prefix = email.split('@')[0].replace(/[._-]+/g, ' ').trim()
+    if (prefix) return prefix
+  }
+  if ((c.phone || '').trim()) return `Customer ${c.phone!.trim().slice(-5)}`
+  return name || 'Unknown'
+}
+
+const displayEmailOf = (c: { email?: string; phone?: string }): string => {
+  const email = (c.email || '').trim()
+  if (email && !isPlaceholderEmail(email)) return email
+  return (c.phone || '').trim() || '—'
+}
+
 export const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -85,7 +111,8 @@ export const CustomersPage: React.FC = () => {
   /**
    * Downloads every customer (all pages, honouring the active search) as a
    * real Excel workbook. `xlsx` is imported lazily so it never weighs down the
-   * initial admin bundle.
+   * initial admin bundle. Download is triggered via Blob + temporary anchor
+   * tag (with the correct .xlsx MIME type) for reliable cross-browser saves.
    */
   const handleExport = async () => {
     if (isExporting) return
@@ -97,30 +124,20 @@ export const CustomersPage: React.FC = () => {
         return
       }
 
-      const XLSX = await import('xlsx')
       const rows = all.map((c) => ({
-        Name: c.name,
-        Email: c.email,
+        Name: displayNameOf(c),
+        Email: isPlaceholderEmail(c.email) ? '' : c.email || '',
         Phone: c.phone || '',
-        City: (c as any).city || '',
-        'Total Orders': c.totalOrders,
-        'Total Spent (INR)': c.lifetimeSpend,
-        'Joined Date': c.createdAt ? formatDate(c.createdAt) : '',
+        'Orders Count': Number(c.totalOrders ?? 0),
+        'Lifetime Spend (₹)': Number(c.lifetimeSpend ?? 0),
+        'Last Activity': (c as any).lastLogin || (c as any).last_login
+          ? formatDate((c as any).lastLogin ?? (c as any).last_login)
+          : '-',
+        Status: c.isBlocked ? 'Blocked' : 'Active',
       }))
 
-      const worksheet = XLSX.utils.json_to_sheet(rows)
-      worksheet['!cols'] = [
-        { wch: 24 },
-        { wch: 30 },
-        { wch: 16 },
-        { wch: 16 },
-        { wch: 13 },
-        { wch: 18 },
-        { wch: 14 },
-      ]
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Customers')
-      XLSX.writeFile(workbook, `meruveda-customers-${new Date().toISOString().slice(0, 10)}.xlsx`)
+      const { writeWorkbook, excelFileName } = await import('../../utils/exportExcel')
+      await writeWorkbook({ Customers: rows }, excelFileName('customers'))
       toast.success(`Exported ${all.length} customers to Excel`)
     } catch (err) {
       console.error('Customer Excel export failed', err)
@@ -146,7 +163,7 @@ export const CustomersPage: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by customer name, email..."
+            placeholder="Search by customer name, email, phone..."
             className="input pl-9"
           />
         </div>
@@ -196,12 +213,12 @@ export const CustomersPage: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <img
                           src={c.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop'}
-                          alt={c.name}
+                          alt={displayNameOf(c)}
                           className="h-9 w-9 rounded-full object-cover border"
                         />
                         <div>
-                          <p className="font-semibold text-slate-900 dark:text-white">{c.name}</p>
-                          <p className="text-xs text-slate-400">{c.email}</p>
+                          <p className="font-semibold text-slate-900 dark:text-white">{displayNameOf(c)}</p>
+                          <p className="text-xs text-slate-400">{displayEmailOf(c)}</p>
                           {c.phone && <p className="text-[10px] text-slate-400">{c.phone}</p>}
                         </div>
                       </div>

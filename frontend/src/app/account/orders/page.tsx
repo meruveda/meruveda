@@ -61,12 +61,23 @@ export default function OrdersPage() {
   }, [orders, filter, query]);
 
   const invoice = (order: AccountOrder) => {
-    // Fixed GST invoice PDF download (backend template).
+    // Fixed GST invoice PDF download (backend template). Anchor download is
+    // popup-blocker safe; the printable detail view is the fallback.
     import("@/api/axiosInstance").then(async ({ default: axiosInstance }) => {
       try {
         const res = await axiosInstance.get(`/orders/${order.id}/invoice`, { responseType: "blob" });
-        const url = URL.createObjectURL(res.data);
-        window.open(url, "_blank");
+        const blob = new Blob([res.data], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `Invoice-${order.orderNumber || order.id}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } finally {
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
       } catch {
         // Fallback to printable detail view.
         router.push(`/account/orders/${encodeURIComponent(order.id)}?print=1`);

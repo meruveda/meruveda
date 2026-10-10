@@ -76,8 +76,15 @@ export default function CheckoutSuccessPage({ params }: { params: Promise<{ orde
         if (cancelled) return;
         setOrder(orderData);
 
-        // Clear cart only once after confirmed payment
-        if (!cartCleared && (orderData.status === "processing" || orderData.status === "pending_payment" || orderData.status === "pending" || orderData.payment_status === "paid")) {
+        // Clear cart only once after CONFIRMED payment (processing/paid/COD).
+        // Never clear while the order is still pending_payment/pending: a QR
+        // payment completed on the phone may still be verifying, and clearing
+        // early would strand the checkout if verification fails.
+        const isConfirmed =
+          orderData.status === "processing" ||
+          orderData.payment_status === "paid" ||
+          String(orderData.payment_method || "").toLowerCase().includes("cash");
+        if (!cartCleared && isConfirmed) {
           await clearCart();
           setCartCleared(true);
         }

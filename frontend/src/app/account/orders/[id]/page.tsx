@@ -108,8 +108,18 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               try {
                 const { default: axiosInstance } = await import("@/api/axiosInstance");
                 const res = await axiosInstance.get(`/orders/${orderId}/invoice`, { responseType: "blob" });
-                const url = URL.createObjectURL(res.data);
-                window.open(url, "_blank");
+                const blob = new Blob([res.data], { type: "application/pdf" });
+                const url = URL.createObjectURL(blob);
+                try {
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `Invoice-${order.orderNumber || orderId}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                } finally {
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }
               } catch {
                 window.print();
               }

@@ -45,6 +45,8 @@ export const OrdersPage: React.FC = () => {
     fetchOrders()
   }, [search, status, paymentMethod, page, limit])
 
+  // Items are non-returnable (see Shipping Policy): no returned/refunded
+  // management — historical rows with those statuses still render elsewhere.
   const orderStatuses: OrderStatus[] = [
     'pending',
     'confirmed',
@@ -52,8 +54,6 @@ export const OrdersPage: React.FC = () => {
     'shipped',
     'delivered',
     'cancelled',
-    'returned',
-    'refunded',
   ]
 
   /** Export all filtered orders (page-walked) as a real .xlsx workbook. */

@@ -3,7 +3,7 @@ export default function FAQPage() {
     <div className="bg-ivory min-h-screen py-20">
       <div className="container mx-auto px-6 max-w-4xl">
         <h1 className="text-4xl font-playfair font-bold text-deep-purple mb-4 text-center">Frequently Asked Questions</h1>
-        <p className="text-gray-600 text-center mb-12 max-w-2xl mx-auto">Find answers to common questions about our products, shipping, and return policies.</p>
+        <p className="text-gray-600 text-center mb-12 max-w-2xl mx-auto">Find answers to common questions about our products and shipping.</p>
         
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -23,7 +23,7 @@ export default function FAQPage() {
 
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <h3 className="text-xl font-bold text-deep-purple mb-2">Can I return a product if I don't like it?</h3>
-            <p className="text-gray-700 leading-relaxed text-sm">Due to hygiene and safety reasons, our products are non-returnable. However, if you receive a wrong, damaged, or expired product, please contact us within 7 days for a replacement or refund.</p>
+            <p className="text-gray-700 leading-relaxed text-sm">No. As stated in our Shipping Policy, all items are non-returnable due to hygiene and safety reasons. If you receive a wrong, damaged, or expired product, please contact us within 7 days and we will arrange a replacement.</p>
           </div>
           
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">

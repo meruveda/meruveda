@@ -10,6 +10,12 @@ import toast from 'react-hot-toast'
 export const ReviewsPage: React.FC = () => {
   const [reviews, setReviews] = useState<Review[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  // Tracks which review id currently has an action in flight so its buttons
+  // disable (double-clicks otherwise look like "nothing happens").
+  const [actingId, setActingId] = useState<string | null>(null)
+
+  const actionError = (err: any, fallback: string) =>
+    err?.response?.data?.error?.message || err?.message || fallback
 
   // Reply Modal
   const [isReplyOpen, setIsReplyOpen] = useState(false)
@@ -41,7 +47,7 @@ export const ReviewsPage: React.FC = () => {
       setIsEditOpen(false)
       fetchReviews()
     } catch (err) {
-      toast.error('Failed to update review')
+      toast.error(actionError(err, 'Failed to update review'))
     }
   }
 
@@ -62,22 +68,30 @@ export const ReviewsPage: React.FC = () => {
   }, [])
 
   const handleStatusUpdate = async (id: string, status: ReviewStatus) => {
+    if (actingId) return
+    setActingId(id)
     try {
       await reviewService.updateReviewStatus(id, status)
       toast.success(`Review ${status}`)
-      fetchReviews()
+      await fetchReviews()
     } catch (err) {
-      toast.error('Operation failed')
+      toast.error(actionError(err, 'Operation failed'))
+    } finally {
+      setActingId(null)
     }
   }
 
   const handleDelete = async (id: string) => {
+    if (actingId) return
+    setActingId(id)
     try {
       await reviewService.deleteReview(id)
       toast.success('Review deleted')
-      fetchReviews()
+      await fetchReviews()
     } catch (err) {
-      toast.error('Failed to delete review')
+      toast.error(actionError(err, 'Failed to delete review'))
+    } finally {
+      setActingId(null)
     }
   }
 
@@ -97,17 +111,21 @@ export const ReviewsPage: React.FC = () => {
       setIsReplyOpen(false)
       fetchReviews()
     } catch (err) {
-      toast.error('Failed to save reply')
+      toast.error(actionError(err, 'Failed to save reply'))
     }
   }
 
   const handleFeatureToggle = async (id: string, currentlyFeatured: boolean) => {
+    if (actingId) return
+    setActingId(id)
     try {
       await reviewService.featureReview(id, !currentlyFeatured)
       toast.success(currentlyFeatured ? 'Removed from homepage' : 'Now featured on homepage!')
-      fetchReviews()
+      await fetchReviews()
     } catch (err) {
-      toast.error('Failed to update feature status')
+      toast.error(actionError(err, 'Failed to update feature status'))
+    } finally {
+      setActingId(null)
     }
   }
 
@@ -194,7 +212,8 @@ export const ReviewsPage: React.FC = () => {
                     {rev.status === 'approved' && (
                       <button
                         onClick={() => handleFeatureToggle(rev.id, !!(rev as any).isFeatured)}
-                        className={`p-1.5 rounded-lg border dark:border-slate-800 transition-colors ${
+                        disabled={actingId === rev.id}
+                        className={`p-1.5 rounded-lg border dark:border-slate-800 transition-colors disabled:opacity-40 ${
                           (rev as any).isFeatured
                             ? 'bg-amber-50 text-amber-500 hover:bg-amber-100'
                             : 'hover:bg-amber-50 text-slate-400 hover:text-amber-500'
@@ -207,7 +226,8 @@ export const ReviewsPage: React.FC = () => {
                     {rev.status === 'pending' && (
                       <button
                         onClick={() => handleStatusUpdate(rev.id, 'approved')}
-                        className="p-1.5 hover:bg-green-50 text-slate-400 hover:text-green-600 rounded-lg border dark:border-slate-800"
+                        disabled={actingId === rev.id}
+                        className="p-1.5 hover:bg-green-50 text-slate-400 hover:text-green-600 rounded-lg border dark:border-slate-800 disabled:opacity-40"
                         title="Approve Review"
                       >
                         <Check className="h-4 w-4" />
@@ -216,7 +236,8 @@ export const ReviewsPage: React.FC = () => {
                     {rev.status === 'pending' && (
                       <button
                         onClick={() => handleStatusUpdate(rev.id, 'rejected')}
-                        className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg border dark:border-slate-800"
+                        disabled={actingId === rev.id}
+                        className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg border dark:border-slate-800 disabled:opacity-40"
                         title="Reject Review"
                       >
                         <RejectIcon className="h-4 w-4" />
@@ -238,7 +259,8 @@ export const ReviewsPage: React.FC = () => {
                     </button>
                     <button
                       onClick={() => handleDelete(rev.id)}
-                      className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg border dark:border-slate-800"
+                      disabled={actingId === rev.id}
+                      className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg border dark:border-slate-800 disabled:opacity-40"
                       title="Delete Review"
                     >
                       <Trash2 className="h-4 w-4" />

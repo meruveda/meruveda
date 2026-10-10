@@ -16,6 +16,10 @@ function TrackInner() {
   const [guestRef, setGuestRef] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
   const [guestResult, setGuestResult] = useState<Record<string, unknown> | null>(null);
+  const [guestAwb, setGuestAwb] = useState("");
+  const [awbResult, setAwbResult] = useState<Record<string, unknown> | null>(null);
+  const [awbLoading, setAwbLoading] = useState(false);
+  const [awbError, setAwbError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +52,27 @@ function TrackInner() {
       setGuestError(err?.response?.data?.error?.message || err?.message || "No order found for these details.");
     } finally {
       setGuestLoading(false);
+    }
+  };
+
+  const awbTrack = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const awb = guestAwb.trim();
+    if (!awb) {
+      setAwbError("Please enter a tracking ID (AWB).");
+      return;
+    }
+    setAwbLoading(true);
+    setAwbError(null);
+    setAwbResult(null);
+    try {
+      const res = await axiosInstance.get("/orders/track-awb", { params: { awb } });
+      setAwbResult(res.data?.data || null);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      setAwbError(err?.response?.data?.error?.message || err?.message || "No shipment found for this tracking ID.");
+    } finally {
+      setAwbLoading(false);
     }
   };
 
@@ -145,6 +170,37 @@ function TrackInner() {
               Courier: <span className="font-semibold text-gray-700">{String((guestResult as Record<string, unknown>).courier_name || "—")}</span>
               {" · "}AWB: <span className="font-mono font-semibold text-gray-700">{String((guestResult as Record<string, unknown>).awb_code || "—")}</span>
             </p>
+          </div>
+        )}
+
+        <h2 className="font-playfair font-bold text-deep-purple text-lg mb-1 mt-8">Track by tracking ID (AWB)</h2>
+        <p className="text-xs text-gray-500 mb-4">Have only the courier tracking ID from your invoice or SMS? Enter it below.</p>
+        <form onSubmit={awbTrack} className="grid sm:grid-cols-[1fr_auto] gap-3 max-w-2xl">
+          <input value={guestAwb} onChange={(e) => setGuestAwb(e.target.value)} required placeholder="Tracking ID (e.g. 123456789012)" className={`${input} font-mono`} aria-label="Tracking ID (AWB)" />
+          <button type="submit" disabled={awbLoading} className="px-6 py-2.5 bg-deep-purple text-white hover:bg-deep-purple/90 rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap">
+            {awbLoading && <Loader2 size={15} className="animate-spin" />} Track shipment
+          </button>
+        </form>
+        {awbError && (
+          <div className="mt-4 max-w-2xl">
+            <ErrorBox message={awbError} />
+          </div>
+        )}
+        {awbResult && (
+          <div className="mt-4 max-w-2xl bg-white border border-gray-100 rounded-2xl p-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="font-bold text-deep-purple font-mono">{String(awbResult.awb_code || "")}</p>
+              <StatusBadge status={String(awbResult.current_status || awbResult.status || "In transit")} />
+            </div>
+            <p className="text-xs text-gray-500 mt-3">
+              Courier: <span className="font-semibold text-gray-700">{String(awbResult.courier_name || awbResult.courier || "—")}</span>
+              {" · "}ETA: <span className="font-semibold text-gray-700">{String(awbResult.etd || awbResult.estimated_delivery || "—")}</span>
+            </p>
+            {awbResult.tracking_url ? (
+              <a href={String(awbResult.tracking_url)} target="_blank" rel="noreferrer" className="inline-block mt-3 text-xs font-bold text-gold hover:underline">
+                Track on courier site
+              </a>
+            ) : null}
           </div>
         )}
       </div>
